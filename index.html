@@ -463,14 +463,28 @@ html, body
     transform: translateX(-50%);
     display: none;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    max-width: 94%;
     background: rgba(20, 50, 70, 0.88);
     border: 3px solid #ffca5f;
     border-radius: 14px;
-    padding: 7px 12px;
+    padding: 7px 10px;
     color: #fff;
     font-size: 13px;
     z-index: 35;
+}
+
+#placeBar #placeName
+{
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+#placeBar .btn
+{
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    font-size: 13px;
 }
 
 /* ---------- title screen ---------- */
@@ -724,6 +738,7 @@ input[type="range"]
         <canvas id="cv"></canvas>
         <div id="placeBar">
             <span id="placeName"></span>
+            <button class="btn blue" id="btnPlaceRotate">↻ 회전</button>
             <button class="btn red" id="btnPlaceCancel">취소</button>
         </div>
         <button id="openBtn">🎉 개장하기!</button>
@@ -2727,9 +2742,38 @@ function drawFacility(ctx, o, wx, wy, t)
 
 function drawObject(ctx, o, t)
 {
+    var b = BUILD[o.type];
+    var rotated = o.rot && b.w !== b.h;
+    if (rotated)
+    {
+        // rotate the canvas 90 degrees around the rotated footprint center
+        // and draw the native sprite centered; keeps all sprite code intact
+        var nw = b.w * TS;
+        var nh = b.h * TS;
+        var rw = b.h * TS;
+        var rh = b.w * TS;
+        var cx = o.x * TS + rw / 2;
+        var cy = o.y * TS + rh / 2;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(Math.PI / 2);
+        var ox = -nw / 2;
+        var oy = -nh / 2;
+        ctx.fillStyle = 'rgba(60,40,20,0.15)';
+        ctx.fillRect(ox + 2, oy + nh - 5, nw - 4, 4);
+        if (b.kind === 'tank')
+        {
+            drawTank(ctx, o, ox, oy, t);
+        }
+        else
+        {
+            drawFacility(ctx, o, ox, oy, t);
+        }
+        ctx.restore();
+        return;
+    }
     var wx = o.x * TS;
     var wy = o.y * TS;
-    var b = BUILD[o.type];
     // ground shadow
     ctx.fillStyle = 'rgba(60,40,20,0.15)';
     ctx.fillRect(wx + 2, wy + b.h * TS - 5, b.w * TS - 4, 4);
@@ -2978,6 +3022,36 @@ function usableW()
     return EXP_W[S.expansion];
 }
 
+// effective footprint in tiles (width/height swap when rotated 90 degrees)
+function ftW(type, rot)
+{
+    var b = BUILD[type];
+    return rot ? b.h : b.w;
+}
+
+function ftH(type, rot)
+{
+    var b = BUILD[type];
+    return rot ? b.w : b.h;
+}
+
+function oW(o)
+{
+    return ftW(o.type, o.rot);
+}
+
+function oH(o)
+{
+    return ftH(o.type, o.rot);
+}
+
+// square footprints gain nothing from rotation
+function canRotate(type)
+{
+    var b = BUILD[type];
+    return b.w !== b.h;
+}
+
 function rebuildGrid()
 {
     walkGrid = [];
@@ -2993,10 +3067,11 @@ function rebuildGrid()
     for (var i = 0; i < S.objects.length; i++)
     {
         var o = S.objects[i];
-        var b = BUILD[o.type];
-        for (var dy = 0; dy < b.h; dy++)
+        var ow = oW(o);
+        var oh = oH(o);
+        for (var dy = 0; dy < oh; dy++)
         {
-            for (var dx = 0; dx < b.w; dx++)
+            for (var dx = 0; dx < ow; dx++)
             {
                 walkGrid[o.y + dy][o.x + dx] = false;
             }
@@ -3018,8 +3093,7 @@ function objectAt(x, y)
     for (var i = 0; i < S.objects.length; i++)
     {
         var o = S.objects[i];
-        var b = BUILD[o.type];
-        if (x >= o.x && x < o.x + b.w && y >= o.y && y < o.y + b.h)
+        if (x >= o.x && x < o.x + oW(o) && y >= o.y && y < o.y + oH(o))
         {
             return o;
         }
@@ -3028,16 +3102,17 @@ function objectAt(x, y)
 }
 
 // check placement validity. returns null if ok, or error message
-function placeError(type, x, y)
+function placeError(type, x, y, rot)
 {
-    var b = BUILD[type];
-    if (x < 0 || y < 0 || x + b.w > usableW() || y + b.h > MAP_H)
+    var fw = ftW(type, rot);
+    var fh = ftH(type, rot);
+    if (x < 0 || y < 0 || x + fw > usableW() || y + fh > MAP_H)
     {
         return '부지 밖에는 지을 수 없습니다';
     }
-    for (var dy = 0; dy < b.h; dy++)
+    for (var dy = 0; dy < fh; dy++)
     {
-        for (var dx = 0; dx < b.w; dx++)
+        for (var dx = 0; dx < fw; dx++)
         {
             var tx = x + dx;
             var ty = y + dy;
@@ -3053,9 +3128,9 @@ function placeError(type, x, y)
     }
     // simulate placement and check reachability of all objects
     var blocked = {};
-    for (var dy2 = 0; dy2 < b.h; dy2++)
+    for (var dy2 = 0; dy2 < fh; dy2++)
     {
-        for (var dx2 = 0; dx2 < b.w; dx2++)
+        for (var dx2 = 0; dx2 < fw; dx2++)
         {
             blocked[(x + dx2) + ',' + (y + dy2)] = true;
         }
@@ -3066,7 +3141,7 @@ function placeError(type, x, y)
         return '입구를 막을 수 없습니다';
     }
     var all = S.objects.slice();
-    all.push({ type: type, x: x, y: y });
+    all.push({ type: type, x: x, y: y, rot: rot });
     for (var i = 0; i < all.length; i++)
     {
         if (!objectReachable(all[i], reach, blocked))
@@ -3108,10 +3183,11 @@ function bfsRegion(sx, sy, extraBlocked)
 
 function objectReachable(o, reach, extraBlocked)
 {
-    var b = BUILD[o.type];
-    for (var dy = 0; dy < b.h; dy++)
+    var ow = oW(o);
+    var oh = oH(o);
+    for (var dy = 0; dy < oh; dy++)
     {
-        for (var dx = 0; dx < b.w; dx++)
+        for (var dx = 0; dx < ow; dx++)
         {
             var pts = [[o.x + dx + 1, o.y + dy], [o.x + dx - 1, o.y + dy], [o.x + dx, o.y + dy + 1], [o.x + dx, o.y + dy - 1]];
             for (var p = 0; p < 4; p++)
@@ -3126,9 +3202,10 @@ function objectReachable(o, reach, extraBlocked)
     return false;
 }
 
-function placeObject(type, x, y)
+function placeObject(type, x, y, rot)
 {
-    var err = placeError(type, x, y);
+    rot = !!rot && canRotate(type);
+    var err = placeError(type, x, y, rot);
     if (err)
     {
         showToast(err);
@@ -3143,7 +3220,7 @@ function placeObject(type, x, y)
         return null;
     }
     S.money -= b.cost;
-    var o = { id: objIdSeq++, type: type, x: x, y: y, lv: 1 };
+    var o = { id: objIdSeq++, type: type, x: x, y: y, lv: 1, rot: rot };
     if (b.kind === 'tank')
     {
         o.species = null;
@@ -3152,7 +3229,7 @@ function placeObject(type, x, y)
     rebuildGrid();
     repathAll();
     addDust(o);
-    addFloat((x + b.w / 2) * TS, y * TS, '-' + b.cost + 'G', '#ffb0a0');
+    addFloat((x + ftW(type, rot) / 2) * TS, y * TS, '-' + b.cost + 'G', '#ffb0a0');
     sfx('place');
     checkCombos();
     return o;
@@ -3172,7 +3249,7 @@ function sellObject(o)
     S.money += refund;
     rebuildGrid();
     repathAll();
-    addFloat((o.x + b.w / 2) * TS, o.y * TS, '+' + refund + 'G', '#ffe060');
+    addFloat((o.x + oW(o) / 2) * TS, o.y * TS, '+' + refund + 'G', '#ffe060');
     sfx('coin');
 }
 
@@ -3352,11 +3429,12 @@ function findPath(sx, sy, tx, ty, dirOrder)
 // standable tiles adjacent to an object
 function standTiles(o)
 {
-    var b = BUILD[o.type];
+    var ow = oW(o);
+    var oh = oH(o);
     var out = [];
-    for (var dy = 0; dy < b.h; dy++)
+    for (var dy = 0; dy < oh; dy++)
     {
-        for (var dx = 0; dx < b.w; dx++)
+        for (var dx = 0; dx < ow; dx++)
         {
             var pts = [[o.x + dx + 1, o.y + dy], [o.x + dx - 1, o.y + dy], [o.x + dx, o.y + dy + 1], [o.x + dx, o.y + dy - 1]];
             for (var p = 0; p < 4; p++)
@@ -3498,13 +3576,14 @@ var PUFFS = [];
 
 function addDust(o)
 {
-    var b = BUILD[o.type];
-    var n = 5 + b.w * 2;
+    var ow = oW(o);
+    var oh = oH(o);
+    var n = 5 + ow * 2;
     for (var i = 0; i < n; i++)
     {
         PUFFS.push({
-            x: o.x * TS + 4 + Math.random() * (b.w * TS - 8),
-            y: o.y * TS + b.h * TS - 4 - Math.random() * 10,
+            x: o.x * TS + 4 + Math.random() * (ow * TS - 8),
+            y: o.y * TS + oh * TS - 4 - Math.random() * 10,
             r: 2 + Math.random() * 3,
             vx: (Math.random() - 0.5) * 20,
             t: 0
@@ -3915,9 +3994,8 @@ function updateVisitor(v, dt)
             v.stateT = 0;
             v.moving = false;
             // face the object (4 directions)
-            var b = BUILD[obj.type];
-            var fdx = (obj.x + b.w / 2) * TS - v.x;
-            var fdy = (obj.y + b.h / 2) * TS - v.y;
+            var fdx = (obj.x + oW(obj) / 2) * TS - v.x;
+            var fdy = (obj.y + oH(obj) / 2) * TS - v.y;
             if (Math.abs(fdx) > Math.abs(fdy))
             {
                 v.dir = 'side';
@@ -4409,8 +4487,9 @@ function doFeed(o)
 {
     FEED = null;
     S.feedCount = (S.feedCount || 0) + 1;
-    var b = BUILD[o.type];
-    var cx = (o.x + b.w / 2) * TS;
+    var owf = oW(o);
+    var ohf = oH(o);
+    var cx = (o.x + owf / 2) * TS;
     var cy = o.y * TS;
     addEmote(cx - 8, cy, 'heart');
     addEmote(cx + 8, cy - 6, 'sparkle');
@@ -4423,8 +4502,8 @@ function doFeed(o)
     for (var i = 0; i < VISITORS.length; i++)
     {
         var v = VISITORS[i];
-        var dx = Math.abs(v.x / TS - (o.x + b.w / 2));
-        var dy = Math.abs(v.y / TS - (o.y + b.h / 2));
+        var dx = Math.abs(v.x / TS - (o.x + owf / 2));
+        var dy = Math.abs(v.y / TS - (o.y + ohf / 2));
         if (dx <= 3.5 && dy <= 3.5)
         {
             v.sat += 7;
@@ -4511,8 +4590,7 @@ function playWithCat(o)
     }
     o.mood = Math.min(100, mood + 25);
     S.playCount = (S.playCount || 0) + 1;
-    var b = BUILD[o.type];
-    var cx = (o.x + b.w / 2) * TS;
+    var cx = (o.x + oW(o) / 2) * TS;
     addEmote(cx - 6, o.y * TS, 'heart');
     addEmote(cx + 6, o.y * TS - 8, 'note');
     if (Math.random() < 0.5)
@@ -4558,17 +4636,18 @@ function startShow(stage)
     S.showCd = 6;
     S.showCount = (S.showCount || 0) + 1;
     SHOW = { objId: stage.id, sp: performer, t: 6 };
-    var b = BUILD[stage.type];
-    var cx = (stage.x + b.w / 2) * TS;
-    var cy = (stage.y + b.h / 2) * TS;
+    var sw = oW(stage);
+    var sh = oH(stage);
+    var cx = (stage.x + sw / 2) * TS;
+    var cy = (stage.y + sh / 2) * TS;
     // nearby visitors buy show tickets and love it
     var n = 0;
     var income = 0;
     for (var i = 0; i < VISITORS.length; i++)
     {
         var v = VISITORS[i];
-        var dx = Math.abs(v.x / TS - (stage.x + b.w / 2));
-        var dy = Math.abs(v.y / TS - (stage.y + b.h / 2));
+        var dx = Math.abs(v.x / TS - (stage.x + sw / 2));
+        var dy = Math.abs(v.y / TS - (stage.y + sh / 2));
         if (dx <= 4.5 && dy <= 4.5)
         {
             var pay = Math.min(80, v.money);
@@ -4606,8 +4685,7 @@ function updateShow(dt)
     // ambient music notes during the show
     if (Math.random() < dt * 2.5)
     {
-        var b = BUILD[stage.type];
-        addEmote((stage.x + Math.random() * b.w) * TS, stage.y * TS + 4, 'note');
+        addEmote((stage.x + Math.random() * oW(stage)) * TS, stage.y * TS + 4, 'note');
     }
 }
 
@@ -5354,9 +5432,10 @@ function openBuildPanel(tab)
                     showToast('자금이 부족합니다');
                     return;
                 }
-                MODE = { kind: 'place', build: type, ghost: null, armedTile: null };
+                MODE = { kind: 'place', build: type, ghost: null, armedTile: null, rot: false };
                 closePanel();
                 $('placeBar').style.display = 'flex';
+                $('btnPlaceRotate').style.display = canRotate(type) ? 'inline-block' : 'none';
                 setPlaceBarText(false);
             });
             act.appendChild(btn);
@@ -6071,6 +6150,19 @@ function cancelPlaceMode()
     $('placeBar').style.display = 'none';
 }
 
+// rotate the piece being placed 90 degrees; re-arms confirmation
+function rotateGhost()
+{
+    if (MODE.kind !== 'place' || !MODE.build || !canRotate(MODE.build))
+    {
+        return;
+    }
+    MODE.rot = !MODE.rot;
+    MODE.armedTile = null;
+    sfx('click');
+    setPlaceBarText(false);
+}
+
 // place bar prompt: armed=true after the first tap (awaiting confirmation)
 function setPlaceBarText(armed)
 {
@@ -6417,17 +6509,18 @@ function renderWorld()
     // placement ghost
     if (MODE.kind === 'place' && MODE.ghost)
     {
-        var gb = BUILD[MODE.build];
         var gx = MODE.ghost.tx;
         var gy = MODE.ghost.ty;
-        var err = placeError(MODE.build, gx, gy);
+        var gw = ftW(MODE.build, MODE.rot) * TS;
+        var gh = ftH(MODE.build, MODE.rot) * TS;
+        var err = placeError(MODE.build, gx, gy, MODE.rot);
         var armed = MODE.armedTile && MODE.armedTile.tx === gx && MODE.armedTile.ty === gy && !err;
         ctx.globalAlpha = armed ? 0.35 : 0.55;
         ctx.fillStyle = err ? '#f04040' : '#40d060';
-        ctx.fillRect(gx * TS, gy * TS, gb.w * TS, gb.h * TS);
+        ctx.fillRect(gx * TS, gy * TS, gw, gh);
         if (!err)
         {
-            var fake = { type: MODE.build, x: gx, y: gy, species: null, lv: 1 };
+            var fake = { type: MODE.build, x: gx, y: gy, species: null, lv: 1, rot: MODE.rot };
             drawObject(ctx, fake, GAME_TIME);
         }
         ctx.globalAlpha = 1;
@@ -6437,10 +6530,10 @@ function renderWorld()
             var pulse = 0.5 + Math.abs(Math.sin(GAME_TIME * 5)) * 0.5;
             ctx.strokeStyle = 'rgba(255,210,40,' + pulse.toFixed(2) + ')';
             ctx.lineWidth = 3;
-            ctx.strokeRect(gx * TS + 1, gy * TS + 1, gb.w * TS - 2, gb.h * TS - 2);
+            ctx.strokeRect(gx * TS + 1, gy * TS + 1, gw - 2, gh - 2);
             ctx.font = '15px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('👆', (gx + gb.w / 2) * TS, gy * TS - 4 + Math.sin(GAME_TIME * 6) * 2);
+            ctx.fillText('👆', gx * TS + gw / 2, gy * TS - 4 + Math.sin(GAME_TIME * 6) * 2);
             ctx.textAlign = 'left';
         }
     }
@@ -6598,7 +6691,7 @@ function bindInput()
             {
                 // first tap: preview at this spot, ask for one more tap
                 MODE.armedTile = { tx: t.tx, ty: t.ty };
-                var err = placeError(MODE.build, t.tx, t.ty);
+                var err = placeError(MODE.build, t.tx, t.ty, MODE.rot);
                 if (err)
                 {
                     showToast(err);
@@ -6613,7 +6706,7 @@ function bindInput()
             // second tap on the same tile: build
             MODE.armedTile = null;
             setPlaceBarText(false);
-            var o = placeObject(MODE.build, t.tx, t.ty);
+            var o = placeObject(MODE.build, t.tx, t.ty, MODE.rot);
             if (o)
             {
                 updateHUD();
@@ -6782,6 +6875,14 @@ function boot()
     document.getElementById('tbMenu').addEventListener('click', function () { sfx('click'); cancelPlaceMode(); openMenuPanel(); });
     document.getElementById('btnSpeed').addEventListener('click', cycleSpeed);
     document.getElementById('btnPlaceCancel').addEventListener('click', function () { sfx('click'); cancelPlaceMode(); });
+    document.getElementById('btnPlaceRotate').addEventListener('click', function () { rotateGhost(); });
+    document.addEventListener('keydown', function (e)
+    {
+        if ((e.key === 'r' || e.key === 'R') && MODE.kind === 'place')
+        {
+            rotateGhost();
+        }
+    });
     document.getElementById('openBtn').addEventListener('click', function ()
     {
         initAudio();
