@@ -2888,6 +2888,7 @@ function defaultState()
         fee: 100,
         speed: 1,
         muted: false,
+        bgmOn: true,
         expansion: 0,
         objects: [],
         unlocked: [st],
@@ -2989,6 +2990,10 @@ function loadGame()
         {
             // saves from before the opening system are already open
             S.opened = true;
+        }
+        if (d.bgmOn === undefined)
+        {
+            S.bgmOn = true;
         }
         VISITORS = [];
         FLOATS = [];
@@ -3250,7 +3255,7 @@ function sellObject(o)
     rebuildGrid();
     repathAll();
     addFloat((o.x + oW(o) / 2) * TS, o.y * TS, '+' + refund + 'G', '#ffe060');
-    sfx('coin');
+    sfx('sell');
 }
 
 function stockTank(o, spId)
@@ -3525,7 +3530,7 @@ function checkCombos()
                 {
                     addEmote((used[u].x + 0.5) * TS, used[u].y * TS, 'sparkle');
                 }
-                sfx('fanfare');
+                sfx('combo');
                 queueModal({
                     title: '✨ 스폿 발견! ✨',
                     body: '<div style="text-align:center;font-size:18px;color:#c07000;">「' + combo.name + '」</div>' +
@@ -4410,7 +4415,7 @@ function checkQuest()
         parts.push('💗 인기 +' + r.fame);
     }
     S.questIdx++;
-    sfx('fanfare');
+    sfx('quest');
     var next = currentQuest();
     queueModal({
         title: '📌 목표 달성!',
@@ -4515,7 +4520,7 @@ function doFeed(o)
     {
         gainFame(2);
     }
-    sfx('fanfare');
+    sfx('feed');
     showToast('🍴 먹이 시간! 물고기들이 신났다! (' + n + '명이 좋아함)');
 }
 
@@ -4566,7 +4571,7 @@ function finishExpedition()
         S.money += bonus;
         bonusTxt = '<br>💰 게다가 보물도 발견! +' + bonus + 'G';
     }
-    sfx('fanfare');
+    sfx('unlock');
     queueModal({
         title: '⛏️ 발굴 성공!',
         body: '<div style="text-align:center;">' + ex.site + '에서 발굴대가 돌아왔습니다!<br><br><b style="font-size:16px;color:#c07000;">「' + sp.name + '」 획득!</b>' + bonusTxt +
@@ -4811,6 +4816,7 @@ function monthEnd()
     }
     if (S.month === 1)
     {
+        sfx('newyear');
         queueModal({
             title: '🎍 새해가 밝았어요!',
             body: '<div style="text-align:center;">' + OWNER_NAME + ' ' + THEME.text.ownerTitle + ',<br>새해 복 많이 받으세요! 🎉<br><br>올해도 즐거운 한 해가 되길!<br><b>새해 축하금 +1000G</b></div>',
@@ -4976,6 +4982,14 @@ function rollEvent()
         return;
     }
     var pick = pool[Math.floor(Math.random() * pool.length)];
+    if (pick.id && pick.id.indexOf('vip') === 0)
+    {
+        sfx('vip');
+    }
+    else
+    {
+        sfx('modal');
+    }
     if (pick.choice)
     {
         queueModal({
@@ -5042,7 +5056,7 @@ function unlockSpecies(id)
     S.rp -= sp.rpCost;
     S.unlocked.push(id);
     S.spLv[id] = 1;
-    sfx('fanfare');
+    sfx('unlock');
     showToast(sp.name + ' ' + THEME.text.unlockVerb + ' 완료!');
     checkDex();
     return true;
@@ -5148,18 +5162,36 @@ function buyExpansion()
     showToast(ex.name + ' 완료! 부지가 넓어졌습니다');
 }
 
-// ---------- sound ----------
+// ---------- sound engine (chiptune) ----------
 var audioCtx = null;
+var sfxGain = null;
+var musicGain = null;
 
 function initAudio()
 {
     if (audioCtx)
     {
+        if (audioCtx.state === 'suspended')
+        {
+            try
+            {
+                audioCtx.resume();
+            }
+            catch (e)
+            {
+            }
+        }
         return;
     }
     try
     {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        sfxGain = audioCtx.createGain();
+        sfxGain.gain.value = 1;
+        sfxGain.connect(audioCtx.destination);
+        musicGain = audioCtx.createGain();
+        musicGain.gain.value = 0.7;
+        musicGain.connect(audioCtx.destination);
     }
     catch (e)
     {
@@ -5167,23 +5199,57 @@ function initAudio()
     }
 }
 
+// note name (e.g. "C5", "F#4") to frequency
+var NOTE_SEMI = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
+
+function noteFreq(n)
+{
+    var m = /^([A-G]#?)(\d)$/.exec(n);
+    if (!m)
+    {
+        return 0;
+    }
+    var midi = (parseInt(m[2], 10) + 1) * 12 + NOTE_SEMI[m[1]];
+    return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+// schedule one tone at an absolute audio-clock time
+function tone(freq, dur, at, type, vol, target)
+{
+    if (!audioCtx || !freq)
+    {
+        return;
+    }
+    var osc = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    osc.type = type || 'square';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(vol, at + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    osc.connect(g);
+    g.connect(target || sfxGain || audioCtx.destination);
+    osc.start(at);
+    osc.stop(at + dur + 0.02);
+}
+
+// legacy helper used by sfx(): freq, dur, delay, type, vol
 function beep(freq, dur, delay, type, vol)
 {
     if (!audioCtx || (S && S.muted))
     {
         return;
     }
-    var t0 = audioCtx.currentTime + (delay || 0);
-    var osc = audioCtx.createOscillator();
-    var g = audioCtx.createGain();
-    osc.type = type || 'square';
-    osc.frequency.value = freq;
-    g.gain.setValueAtTime(vol || 0.05, t0);
-    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-    osc.connect(g);
-    g.connect(audioCtx.destination);
-    osc.start(t0);
-    osc.stop(t0 + dur);
+    tone(freq, dur, audioCtx.currentTime + (delay || 0), type || 'square', vol || 0.05, sfxGain);
+}
+
+// play a short melodic run of note names
+function jingle(notes, step, type, vol)
+{
+    for (var i = 0; i < notes.length; i++)
+    {
+        beep(noteFreq(notes[i]), step * 1.6, i * step, type || 'square', vol || 0.05);
+    }
 }
 
 function sfx(name)
@@ -5192,30 +5258,217 @@ function sfx(name)
     {
         return;
     }
-    if (name === 'place')
+    switch (name)
     {
-        beep(440, 0.08);
-        beep(660, 0.1, 0.07);
+        case 'place':
+            beep(523, 0.07, 0, 'square', 0.05);
+            beep(784, 0.1, 0.06, 'square', 0.05);
+            break;
+        case 'sell':
+            beep(660, 0.07, 0, 'square', 0.04);
+            beep(440, 0.1, 0.06, 'square', 0.04);
+            break;
+        case 'coin':
+            beep(988, 0.05, 0, 'square', 0.035);
+            beep(1319, 0.08, 0.05, 'square', 0.035);
+            break;
+        case 'bad':
+            beep(200, 0.14, 0, 'sawtooth', 0.045);
+            beep(150, 0.16, 0.06, 'sawtooth', 0.04);
+            break;
+        case 'click':
+            beep(680, 0.035, 0, 'square', 0.03);
+            break;
+        case 'modal':
+            beep(880, 0.05, 0, 'triangle', 0.04);
+            beep(1174, 0.06, 0.04, 'triangle', 0.03);
+            break;
+        case 'unlock':
+            jingle(['C5', 'E5', 'G5', 'C6'], 0.07, 'square', 0.05);
+            break;
+        case 'combo':
+            jingle(['G5', 'A5', 'B5', 'D6', 'G6'], 0.06, 'square', 0.05);
+            break;
+        case 'quest':
+            jingle(['E5', 'G5', 'C6'], 0.08, 'square', 0.05);
+            break;
+        case 'feed':
+            beep(784, 0.05, 0, 'triangle', 0.04);
+            beep(1047, 0.05, 0.05, 'triangle', 0.04);
+            beep(1319, 0.08, 0.1, 'triangle', 0.04);
+            break;
+        case 'vip':
+            jingle(['C6', 'E6', 'G6', 'E6', 'C6'], 0.07, 'triangle', 0.04);
+            break;
+        case 'newyear':
+            jingle(['C5', 'G5', 'C6', 'G5', 'C6', 'E6'], 0.1, 'triangle', 0.045);
+            break;
+        case 'fanfare':
+        case 'levelup':
+            beep(523, 0.11, 0, 'square', 0.05);
+            beep(659, 0.11, 0.1, 'square', 0.05);
+            beep(784, 0.11, 0.2, 'square', 0.05);
+            beep(1047, 0.28, 0.3, 'square', 0.055);
+            beep(784, 0.28, 0.3, 'triangle', 0.03);
+            beep(1319, 0.32, 0.42, 'square', 0.05);
+            break;
+        default:
+            break;
     }
-    if (name === 'coin')
-    {
-        beep(880, 0.06, 0, 'square', 0.03);
-        beep(1320, 0.08, 0.05, 'square', 0.03);
+}
+
+// ---------- background music (looping chiptune per theme) ----------
+// each track token: "C5" (1 step) or "C5:2" (2 steps) or ".:2" (rest)
+var SONGS = {
+    aqua: {
+        bpm: 134,
+        lead: ['G4:2', 'C5:2', 'E5:2', 'G5:2', 'E5:2', 'C5:2', 'D5:4',
+            'F4:2', 'A4:2', 'C5:2', 'F5:2', 'E5:2', 'C5:2', 'B4:4',
+            'E5:2', 'G5:2', 'C6:2', 'B5:2', 'A5:2', 'G5:2', 'E5:4',
+            'D5:2', 'F5:2', 'A5:2', 'G5:2', 'C5:4', '.:4'],
+        bass: ['C3:2', 'C3:2', 'G2:2', 'C3:2', 'F2:2', 'F2:2', 'C3:2', 'G2:2',
+            'C3:2', 'C3:2', 'G2:2', 'G2:2', 'A2:2', 'E2:2', 'G2:2', 'G2:2']
+    },
+    museum: {
+        bpm: 116,
+        lead: ['D5:2', 'G5:2', 'B5:2', 'G5:2', 'A5:2', 'D5:2', 'B4:4',
+            'C5:2', 'E5:2', 'G5:2', 'E5:2', 'D5:2', 'B4:2', 'G4:4',
+            'B4:2', 'D5:2', 'G5:2', 'A5:2', 'B5:4', 'A5:2', 'G5:2',
+            'D5:2', 'E5:2', 'D5:2', 'B4:2', 'G4:4', '.:4'],
+        bass: ['G2:2', 'D3:2', 'G2:2', 'D3:2', 'C3:2', 'G2:2', 'D3:2', 'D3:2',
+            'E3:2', 'B2:2', 'C3:2', 'G2:2', 'D3:2', 'D3:2', 'G2:2', 'G2:2']
+    },
+    cat: {
+        bpm: 140,
+        lead: ['A5:1', 'A5:1', 'E5:2', 'F5:1', 'F5:1', 'C5:2', 'D5:2', 'E5:2',
+            'C5:2', 'A4:2', 'A5:1', 'A5:1', 'E5:2', 'G5:1', 'G5:1', 'D5:2',
+            'F5:2', 'E5:2', 'D5:2', 'C5:2', 'A5:1', 'B5:1', 'C6:4', '.:2'],
+        bass: ['A2:2', 'E3:2', 'A2:2', 'E3:2', 'F2:2', 'C3:2', 'F2:2', 'C3:2',
+            'C3:2', 'G2:2', 'C3:2', 'G2:2', 'D3:2', 'A2:2', 'E3:2', 'E3:2']
     }
-    if (name === 'bad')
+};
+
+var MUS = { on: false, theme: null, tracks: [], hatTime: 0, timer: null, step: 0.2 };
+var noiseBuf = null;
+
+function getNoise()
+{
+    if (noiseBuf)
     {
-        beep(180, 0.15, 0, 'sawtooth', 0.05);
+        return noiseBuf;
     }
-    if (name === 'click')
+    var b = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.05), audioCtx.sampleRate);
+    var d = b.getChannelData(0);
+    for (var i = 0; i < d.length; i++)
     {
-        beep(600, 0.04, 0, 'square', 0.03);
+        d[i] = Math.random() * 2 - 1;
     }
-    if (name === 'fanfare')
+    noiseBuf = b;
+    return b;
+}
+
+function hat(at)
+{
+    if (!audioCtx)
     {
-        beep(523, 0.12, 0);
-        beep(659, 0.12, 0.11);
-        beep(784, 0.12, 0.22);
-        beep(1046, 0.25, 0.33);
+        return;
+    }
+    var src = audioCtx.createBufferSource();
+    src.buffer = getNoise();
+    var f = audioCtx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = 6500;
+    var g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.012, at);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.04);
+    src.connect(f);
+    f.connect(g);
+    g.connect(musicGain);
+    src.start(at);
+    src.stop(at + 0.05);
+}
+
+function stopMusicTimer()
+{
+    if (MUS.timer)
+    {
+        clearInterval(MUS.timer);
+        MUS.timer = null;
+    }
+}
+
+function stopMusic()
+{
+    MUS.on = false;
+    stopMusicTimer();
+}
+
+function startMusic(themeId)
+{
+    if (!audioCtx)
+    {
+        return;
+    }
+    MUS.theme = themeId;
+    if (!(S && S.bgmOn))
+    {
+        return;
+    }
+    var song = SONGS[themeId];
+    if (!song)
+    {
+        return;
+    }
+    stopMusicTimer();
+    var t0 = audioCtx.currentTime + 0.15;
+    MUS.step = 60 / song.bpm / 2;
+    MUS.tracks = [
+        { seq: song.lead, i: 0, next: t0, type: 'square', vol: 0.032 },
+        { seq: song.bass, i: 0, next: t0, type: 'triangle', vol: 0.05 }
+    ];
+    MUS.hatTime = t0;
+    MUS.on = true;
+    MUS.timer = setInterval(musicTick, 25);
+}
+
+function musicTick()
+{
+    if (!MUS.on || !audioCtx)
+    {
+        return;
+    }
+    if (!(S && S.bgmOn))
+    {
+        stopMusic();
+        return;
+    }
+    var ahead = audioCtx.currentTime + 0.16;
+    for (var k = 0; k < MUS.tracks.length; k++)
+    {
+        var tr = MUS.tracks[k];
+        var guard = 0;
+        while (tr.next < ahead && guard < 64)
+        {
+            guard++;
+            var tok = tr.seq[tr.i];
+            var c = tok.indexOf(':');
+            var name = (c < 0) ? tok : tok.substring(0, c);
+            var len = (c < 0) ? 1 : parseInt(tok.substring(c + 1), 10);
+            var dur = len * MUS.step;
+            if (name !== '.')
+            {
+                tone(noteFreq(name), dur * 0.9, tr.next, tr.type, tr.vol, musicGain);
+            }
+            tr.next += dur;
+            tr.i = (tr.i + 1) % tr.seq.length;
+        }
+    }
+    var hguard = 0;
+    while (MUS.hatTime < ahead && hguard < 32)
+    {
+        hguard++;
+        hat(MUS.hatTime);
+        MUS.hatTime += MUS.step * 2;
     }
 }
 
@@ -5728,14 +5981,37 @@ function openMenuPanel()
 
     var bSound = document.createElement('button');
     bSound.className = 'btn';
-    bSound.textContent = S.muted ? '🔇 소리 켜기' : '🔊 소리 끄기';
+    bSound.textContent = S.muted ? '🔇 효과음 켜기' : '🔊 효과음 끄기';
     bSound.addEventListener('click', function ()
     {
         S.muted = !S.muted;
-        bSound.textContent = S.muted ? '🔇 소리 켜기' : '🔊 소리 끄기';
-        sfx('click');
+        bSound.textContent = S.muted ? '🔇 효과음 켜기' : '🔊 효과음 끄기';
+        if (!S.muted)
+        {
+            sfx('click');
+        }
     });
     row.appendChild(bSound);
+
+    var bBgm = document.createElement('button');
+    bBgm.className = 'btn';
+    bBgm.textContent = S.bgmOn ? '🎵 배경음악 끄기' : '🎶 배경음악 켜기';
+    bBgm.addEventListener('click', function ()
+    {
+        initAudio();
+        S.bgmOn = !S.bgmOn;
+        bBgm.textContent = S.bgmOn ? '🎵 배경음악 끄기' : '🎶 배경음악 켜기';
+        sfx('click');
+        if (S.bgmOn)
+        {
+            startMusic(THEME.id);
+        }
+        else
+        {
+            stopMusic();
+        }
+    });
+    row.appendChild(bBgm);
 
     var bHelp = document.createElement('button');
     bHelp.className = 'btn';
@@ -6746,6 +7022,7 @@ function bindInput()
 // ---------- launcher ----------
 function showLauncher()
 {
+    stopMusic();
     document.getElementById('title').style.display = 'none';
     var l = document.getElementById('launcher');
     l.style.display = 'flex';
@@ -6840,6 +7117,7 @@ function startGame(cont)
         showTutorial();
     }
     updateHUD();
+    startMusic(THEME.id);
 }
 
 // ---------- main loop ----------
