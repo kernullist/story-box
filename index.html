@@ -5354,10 +5354,10 @@ function openBuildPanel(tab)
                     showToast('자금이 부족합니다');
                     return;
                 }
-                MODE = { kind: 'place', build: type, ghost: null };
+                MODE = { kind: 'place', build: type, ghost: null, armedTile: null };
                 closePanel();
                 $('placeBar').style.display = 'flex';
-                $('placeName').textContent = b.name + ' 배치 — 원하는 곳을 탭!';
+                setPlaceBarText(false);
             });
             act.appendChild(btn);
             card.appendChild(act);
@@ -5998,7 +5998,10 @@ function updateHUD()
     var ob = $('openBtn');
     if (ob)
     {
-        var show = !S.opened && !modalShowing;
+        // hide the open button whenever something covers the play area:
+        // a modal, an open bottom panel, or active placement mode
+        var panelOpen = $('panelHost').children.length > 0;
+        var show = !S.opened && !modalShowing && !panelOpen && MODE.kind !== 'place';
         ob.style.display = show ? 'block' : 'none';
     }
     var ts = $('tbSpecial');
@@ -6011,7 +6014,7 @@ function updateHUD()
     if (qc)
     {
         var q = currentQuest();
-        if (q && !modalShowing)
+        if (q && !modalShowing && MODE.kind !== 'place')
         {
             var p = q.prog ? (' (' + q.prog(S) + ')') : '';
             qc.textContent = '📌 ' + q.name + p;
@@ -6064,8 +6067,26 @@ function cycleSpeed()
 
 function cancelPlaceMode()
 {
-    MODE = { kind: 'normal', build: null, ghost: null };
+    MODE = { kind: 'normal', build: null, ghost: null, armedTile: null };
     $('placeBar').style.display = 'none';
+}
+
+// place bar prompt: armed=true after the first tap (awaiting confirmation)
+function setPlaceBarText(armed)
+{
+    if (MODE.kind !== 'place' || !MODE.build)
+    {
+        return;
+    }
+    var nm = BUILD[MODE.build].name;
+    if (armed)
+    {
+        $('placeName').innerHTML = '<b style="color:#ffe060;">여기에 「' + nm + '」?</b> 한 번 더 탭하면 건설!';
+    }
+    else
+    {
+        $('placeName').textContent = nm + ' 배치 — 원하는 곳을 탭!';
+    }
 }
 
 
@@ -6400,7 +6421,8 @@ function renderWorld()
         var gx = MODE.ghost.tx;
         var gy = MODE.ghost.ty;
         var err = placeError(MODE.build, gx, gy);
-        ctx.globalAlpha = 0.55;
+        var armed = MODE.armedTile && MODE.armedTile.tx === gx && MODE.armedTile.ty === gy && !err;
+        ctx.globalAlpha = armed ? 0.35 : 0.55;
         ctx.fillStyle = err ? '#f04040' : '#40d060';
         ctx.fillRect(gx * TS, gy * TS, gb.w * TS, gb.h * TS);
         if (!err)
@@ -6409,6 +6431,18 @@ function renderWorld()
             drawObject(ctx, fake, GAME_TIME);
         }
         ctx.globalAlpha = 1;
+        // pulsing confirm border on the armed tile
+        if (armed)
+        {
+            var pulse = 0.5 + Math.abs(Math.sin(GAME_TIME * 5)) * 0.5;
+            ctx.strokeStyle = 'rgba(255,210,40,' + pulse.toFixed(2) + ')';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(gx * TS + 1, gy * TS + 1, gb.w * TS - 2, gb.h * TS - 2);
+            ctx.font = '15px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('👆', (gx + gb.w / 2) * TS, gy * TS - 4 + Math.sin(GAME_TIME * 6) * 2);
+            ctx.textAlign = 'left';
+        }
     }
 
     // construction dust
@@ -6538,6 +6572,12 @@ function bindInput()
         {
             var t = canvasTileFromEvent(e);
             MODE.ghost = t;
+            // moving to another tile disarms the pending confirmation
+            if (MODE.armedTile && (MODE.armedTile.tx !== t.tx || MODE.armedTile.ty !== t.ty))
+            {
+                MODE.armedTile = null;
+                setPlaceBarText(false);
+            }
         }
     });
 
@@ -6553,6 +6593,26 @@ function bindInput()
         if (MODE.kind === 'place')
         {
             MODE.ghost = t;
+            var armed = MODE.armedTile && MODE.armedTile.tx === t.tx && MODE.armedTile.ty === t.ty;
+            if (!armed)
+            {
+                // first tap: preview at this spot, ask for one more tap
+                MODE.armedTile = { tx: t.tx, ty: t.ty };
+                var err = placeError(MODE.build, t.tx, t.ty);
+                if (err)
+                {
+                    showToast(err);
+                }
+                else
+                {
+                    sfx('click');
+                }
+                setPlaceBarText(true);
+                return;
+            }
+            // second tap on the same tile: build
+            MODE.armedTile = null;
+            setPlaceBarText(false);
             var o = placeObject(MODE.build, t.tx, t.ty);
             if (o)
             {
