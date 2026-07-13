@@ -6620,7 +6620,7 @@ function setPlaceBarText(armed)
     }
     else
     {
-        $('placeName').textContent = nm + (moving ? ' 이동 — 옮길 곳을 탭!' : ' 배치 — 원하는 곳을 탭!');
+        $('placeName').innerHTML = nm + (moving ? ' 이동' : ' 배치') + ' — <b>끌어서</b> 놓거나 탭!';
     }
 }
 
@@ -7090,23 +7090,69 @@ function drawAmbientLight()
 }
 
 // ---------- input ----------
+// place or move the current piece at (tx,ty). returns true if it committed.
+function commitPlacement(tx, ty)
+{
+    MODE.armedTile = null;
+    setPlaceBarText(false);
+    if (MODE.kind === 'move')
+    {
+        if (commitMove(tx, ty, MODE.rot))
+        {
+            MODE = { kind: 'normal', build: null, ghost: null, armedTile: null };
+            document.getElementById('placeBar').style.display = 'none';
+            updateHUD();
+            return true;
+        }
+        return false;
+    }
+    var o = placeObject(MODE.build, tx, ty, MODE.rot);
+    if (o)
+    {
+        updateHUD();
+        var b = BUILD[MODE.build];
+        if (S.money < b.cost)
+        {
+            cancelPlaceMode();
+        }
+        if (b.kind === 'tank')
+        {
+            cancelPlaceMode();
+            openObjectModal(o);
+        }
+        return true;
+    }
+    return false;
+}
+
+// two-tap flow: first tap arms a preview, second tap on the same tile commits
+function handleTapConfirm(t)
+{
+    var armed = MODE.armedTile && MODE.armedTile.tx === t.tx && MODE.armedTile.ty === t.ty;
+    if (!armed)
+    {
+        MODE.armedTile = { tx: t.tx, ty: t.ty };
+        var err = placeError(MODE.build, t.tx, t.ty, MODE.rot);
+        if (err)
+        {
+            showToast(err);
+        }
+        else
+        {
+            sfx('click');
+        }
+        setPlaceBarText(true);
+        return;
+    }
+    commitPlacement(t.tx, t.ty);
+}
+
+var ptDown = false;
+var ptStart = null;
+var ptDragged = false;
+
 function bindInput()
 {
-    cv.addEventListener('pointermove', function (e)
-    {
-        if (MODE.kind === 'place' || MODE.kind === 'move')
-        {
-            var t = canvasTileFromEvent(e);
-            MODE.ghost = t;
-            // moving to another tile disarms the pending confirmation
-            if (MODE.armedTile && (MODE.armedTile.tx !== t.tx || MODE.armedTile.ty !== t.ty))
-            {
-                MODE.armedTile = null;
-                setPlaceBarText(false);
-            }
-        }
-    });
-
     cv.addEventListener('pointerdown', function (e)
     {
         e.preventDefault();
@@ -7118,51 +7164,17 @@ function bindInput()
         }
         if (MODE.kind === 'place' || MODE.kind === 'move')
         {
+            // defer to pointerup: a tap uses the two-tap flow, a drag drops on release
+            ptDown = true;
+            ptDragged = false;
+            ptStart = { tx: t.tx, ty: t.ty, px: e.clientX, py: e.clientY };
             MODE.ghost = t;
-            var armed = MODE.armedTile && MODE.armedTile.tx === t.tx && MODE.armedTile.ty === t.ty;
-            if (!armed)
+            try
             {
-                // first tap: preview at this spot, ask for one more tap
-                MODE.armedTile = { tx: t.tx, ty: t.ty };
-                var err = placeError(MODE.build, t.tx, t.ty, MODE.rot);
-                if (err)
-                {
-                    showToast(err);
-                }
-                else
-                {
-                    sfx('click');
-                }
-                setPlaceBarText(true);
-                return;
+                cv.setPointerCapture(e.pointerId);
             }
-            // second tap on the same tile: commit
-            MODE.armedTile = null;
-            setPlaceBarText(false);
-            if (MODE.kind === 'move')
+            catch (err)
             {
-                if (commitMove(t.tx, t.ty, MODE.rot))
-                {
-                    MODE = { kind: 'normal', build: null, ghost: null, armedTile: null };
-                    document.getElementById('placeBar').style.display = 'none';
-                    updateHUD();
-                }
-                return;
-            }
-            var o = placeObject(MODE.build, t.tx, t.ty, MODE.rot);
-            if (o)
-            {
-                updateHUD();
-                var b = BUILD[MODE.build];
-                if (S.money < b.cost)
-                {
-                    cancelPlaceMode();
-                }
-                if (b.kind === 'tank')
-                {
-                    cancelPlaceMode();
-                    openObjectModal(o);
-                }
             }
             return;
         }
@@ -7178,6 +7190,81 @@ function bindInput()
             sfx('click');
             openObjectModal(hit);
         }
+    });
+
+    cv.addEventListener('pointermove', function (e)
+    {
+        if (MODE.kind !== 'place' && MODE.kind !== 'move')
+        {
+            return;
+        }
+        var t = canvasTileFromEvent(e);
+        MODE.ghost = t;
+        if (ptDown)
+        {
+            // finger held down and moving: this is a drag
+            var dpx = Math.abs(e.clientX - ptStart.px);
+            var dpy = Math.abs(e.clientY - ptStart.py);
+            if (dpx > 6 || dpy > 6 || t.tx !== ptStart.tx || t.ty !== ptStart.ty)
+            {
+                ptDragged = true;
+                if (MODE.armedTile)
+                {
+                    MODE.armedTile = null;
+                    setPlaceBarText(false);
+                }
+            }
+        }
+        else
+        {
+            // hover (mouse, no button): disarm if the preview left the armed tile
+            if (MODE.armedTile && (MODE.armedTile.tx !== t.tx || MODE.armedTile.ty !== t.ty))
+            {
+                MODE.armedTile = null;
+                setPlaceBarText(false);
+            }
+        }
+    });
+
+    cv.addEventListener('pointerup', function (e)
+    {
+        if (!ptDown)
+        {
+            return;
+        }
+        ptDown = false;
+        try
+        {
+            cv.releasePointerCapture(e.pointerId);
+        }
+        catch (err)
+        {
+        }
+        if (MODE.kind !== 'place' && MODE.kind !== 'move')
+        {
+            return;
+        }
+        var t = canvasTileFromEvent(e);
+        if (t.ty < 0)
+        {
+            ptDragged = false;
+            return;
+        }
+        MODE.ghost = t;
+        if (ptDragged)
+        {
+            // drag-drop: release confirms placement at this tile
+            ptDragged = false;
+            commitPlacement(t.tx, t.ty);
+            return;
+        }
+        handleTapConfirm(t);
+    });
+
+    cv.addEventListener('pointercancel', function ()
+    {
+        ptDown = false;
+        ptDragged = false;
     });
 
     document.addEventListener('contextmenu', function (e)
