@@ -3240,6 +3240,31 @@ function placeObject(type, x, y, rot)
     return o;
 }
 
+// commit a move-in-progress to (x,y) with rotation rot; the object was
+// already lifted out of S.objects by startMove()
+function commitMove(x, y, rot)
+{
+    rot = !!rot && canRotate(MODE.build);
+    var err = placeError(MODE.build, x, y, rot);
+    if (err)
+    {
+        showToast(err);
+        sfx('bad');
+        return false;
+    }
+    var o = MODE.moveObj;
+    o.x = x;
+    o.y = y;
+    o.rot = rot;
+    S.objects.push(o);
+    rebuildGrid();
+    repathAll();
+    addDust(o);
+    sfx('place');
+    checkCombos();
+    return true;
+}
+
 function sellObject(o)
 {
     var b = BUILD[o.type];
@@ -6303,6 +6328,10 @@ function openObjectModal(o)
             });
         }
         facBtns.push({
+            label: '📦 이동', cls: '',
+            onClick: function () { startMove(o); }
+        });
+        facBtns.push({
             label: '판매 +' + fmt(Math.floor(b.cost / 2)) + 'G', cls: 'red',
             onClick: function () { sellObject(o); }
         });
@@ -6354,6 +6383,10 @@ function openObjectModal(o)
             onClick: function () { playWithCat(o); }
         });
     }
+    btns.push({
+        label: '📦 이동', cls: '',
+        onClick: function () { startMove(o); }
+    });
     btns.push({
         label: '판매 +' + fmt(Math.floor(b.cost / 2)) + 'G', cls: 'red',
         onClick: function () { sellObject(o); }
@@ -6457,7 +6490,7 @@ function updateHUD()
         // hide the open button whenever something covers the play area:
         // a modal, an open bottom panel, or active placement mode
         var panelOpen = $('panelHost').children.length > 0;
-        var show = !S.opened && !modalShowing && !panelOpen && MODE.kind !== 'place';
+        var show = !S.opened && !modalShowing && !panelOpen && MODE.kind === 'normal';
         ob.style.display = show ? 'block' : 'none';
     }
     var ts = $('tbSpecial');
@@ -6470,7 +6503,7 @@ function updateHUD()
     if (qc)
     {
         var q = currentQuest();
-        if (q && !modalShowing && MODE.kind !== 'place')
+        if (q && !modalShowing && MODE.kind === 'normal')
         {
             var p = q.prog ? (' (' + q.prog(S) + ')') : '';
             qc.textContent = '📌 ' + q.name + p;
@@ -6521,16 +6554,48 @@ function cycleSpeed()
     updateHUD();
 }
 
+// begin moving an already-placed object: lift it off the grid so it
+// doesn't collide with itself, then enter a move-preview mode
+function startMove(o)
+{
+    var idx = S.objects.indexOf(o);
+    if (idx < 0)
+    {
+        return;
+    }
+    S.objects.splice(idx, 1);
+    rebuildGrid();
+    repathAll();
+    MODE = {
+        kind: 'move', moveObj: o, build: o.type, ghost: { tx: o.x, ty: o.y },
+        armedTile: null, rot: !!o.rot, origX: o.x, origY: o.y, origRot: !!o.rot
+    };
+    $('placeBar').style.display = 'flex';
+    $('btnPlaceRotate').style.display = canRotate(o.type) ? 'inline-block' : 'none';
+    setPlaceBarText(false);
+}
+
 function cancelPlaceMode()
 {
+    // if a move was in progress, drop the lifted object back where it was
+    if (MODE.kind === 'move' && MODE.moveObj)
+    {
+        var o = MODE.moveObj;
+        o.x = MODE.origX;
+        o.y = MODE.origY;
+        o.rot = MODE.origRot;
+        S.objects.push(o);
+        rebuildGrid();
+        repathAll();
+    }
     MODE = { kind: 'normal', build: null, ghost: null, armedTile: null };
     $('placeBar').style.display = 'none';
 }
 
-// rotate the piece being placed 90 degrees; re-arms confirmation
+// rotate the piece being placed/moved 90 degrees; re-arms confirmation
 function rotateGhost()
 {
-    if (MODE.kind !== 'place' || !MODE.build || !canRotate(MODE.build))
+    if ((MODE.kind !== 'place' && MODE.kind !== 'move') || !MODE.build || !canRotate(MODE.build))
     {
         return;
     }
@@ -6543,18 +6608,19 @@ function rotateGhost()
 // place bar prompt: armed=true after the first tap (awaiting confirmation)
 function setPlaceBarText(armed)
 {
-    if (MODE.kind !== 'place' || !MODE.build)
+    if ((MODE.kind !== 'place' && MODE.kind !== 'move') || !MODE.build)
     {
         return;
     }
     var nm = BUILD[MODE.build].name;
+    var moving = (MODE.kind === 'move');
     if (armed)
     {
-        $('placeName').innerHTML = '<b style="color:#ffe060;">여기에 「' + nm + '」?</b> 한 번 더 탭하면 건설!';
+        $('placeName').innerHTML = '<b style="color:#ffe060;">여기로 ' + (moving ? '이동' : '건설') + '?</b> 한 번 더 탭!';
     }
     else
     {
-        $('placeName').textContent = nm + ' 배치 — 원하는 곳을 탭!';
+        $('placeName').textContent = nm + (moving ? ' 이동 — 옮길 곳을 탭!' : ' 배치 — 원하는 곳을 탭!');
     }
 }
 
@@ -6883,8 +6949,8 @@ function renderWorld()
         }
     }
 
-    // placement ghost
-    if (MODE.kind === 'place' && MODE.ghost)
+    // placement / move ghost
+    if ((MODE.kind === 'place' || MODE.kind === 'move') && MODE.ghost)
     {
         var gx = MODE.ghost.tx;
         var gy = MODE.ghost.ty;
@@ -6897,7 +6963,10 @@ function renderWorld()
         ctx.fillRect(gx * TS, gy * TS, gw, gh);
         if (!err)
         {
-            var fake = { type: MODE.build, x: gx, y: gy, species: null, lv: 1, rot: MODE.rot };
+            var mo = MODE.moveObj;
+            var fake = mo
+                ? { type: MODE.build, x: gx, y: gy, species: mo.species, lv: mo.lv, rot: MODE.rot, mood: mo.mood }
+                : { type: MODE.build, x: gx, y: gy, species: null, lv: 1, rot: MODE.rot };
             drawObject(ctx, fake, GAME_TIME);
         }
         ctx.globalAlpha = 1;
@@ -7025,7 +7094,7 @@ function bindInput()
 {
     cv.addEventListener('pointermove', function (e)
     {
-        if (MODE.kind === 'place')
+        if (MODE.kind === 'place' || MODE.kind === 'move')
         {
             var t = canvasTileFromEvent(e);
             MODE.ghost = t;
@@ -7047,7 +7116,7 @@ function bindInput()
         {
             return;
         }
-        if (MODE.kind === 'place')
+        if (MODE.kind === 'place' || MODE.kind === 'move')
         {
             MODE.ghost = t;
             var armed = MODE.armedTile && MODE.armedTile.tx === t.tx && MODE.armedTile.ty === t.ty;
@@ -7067,9 +7136,19 @@ function bindInput()
                 setPlaceBarText(true);
                 return;
             }
-            // second tap on the same tile: build
+            // second tap on the same tile: commit
             MODE.armedTile = null;
             setPlaceBarText(false);
+            if (MODE.kind === 'move')
+            {
+                if (commitMove(t.tx, t.ty, MODE.rot))
+                {
+                    MODE = { kind: 'normal', build: null, ghost: null, armedTile: null };
+                    document.getElementById('placeBar').style.display = 'none';
+                    updateHUD();
+                }
+                return;
+            }
             var o = placeObject(MODE.build, t.tx, t.ty, MODE.rot);
             if (o)
             {
