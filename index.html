@@ -5166,6 +5166,36 @@ function buyExpansion()
 var audioCtx = null;
 var sfxGain = null;
 var musicGain = null;
+var musicFilter = null;
+
+// day/night cosmetic cycle (60s real loop); shared by visuals and music
+function nightFactor()
+{
+    var ph = (GAME_TIME % 60) / 60;
+    if (ph > 0.65 && ph <= 0.90)
+    {
+        return Math.min(1, (ph - 0.65) / 0.06);
+    }
+    if (ph > 0.90)
+    {
+        return Math.max(0, 1 - (ph - 0.90) / 0.10);
+    }
+    return 0;
+}
+
+function duskFactor()
+{
+    var ph = (GAME_TIME % 60) / 60;
+    if (ph > 0.55 && ph <= 0.65)
+    {
+        return (ph - 0.55) / 0.10;
+    }
+    if (ph > 0.65 && ph <= 0.90)
+    {
+        return Math.max(0, 1 - (ph - 0.65) / 0.08);
+    }
+    return 0;
+}
 
 function initAudio()
 {
@@ -5191,7 +5221,12 @@ function initAudio()
         sfxGain.connect(audioCtx.destination);
         musicGain = audioCtx.createGain();
         musicGain.gain.value = 0.7;
-        musicGain.connect(audioCtx.destination);
+        // lowpass on the music bus lets us dim the tone at night/off-season
+        musicFilter = audioCtx.createBiquadFilter();
+        musicFilter.type = 'lowpass';
+        musicFilter.frequency.value = 8000;
+        musicGain.connect(musicFilter);
+        musicFilter.connect(audioCtx.destination);
     }
     catch (e)
     {
@@ -5322,33 +5357,68 @@ function sfx(name)
 var SONGS = {
     aqua: {
         bpm: 134,
-        lead: ['G4:2', 'C5:2', 'E5:2', 'G5:2', 'E5:2', 'C5:2', 'D5:4',
+        lead: [
+            // A phrase
+            'G4:2', 'C5:2', 'E5:2', 'G5:2', 'E5:2', 'C5:2', 'D5:4',
             'F4:2', 'A4:2', 'C5:2', 'F5:2', 'E5:2', 'C5:2', 'B4:4',
             'E5:2', 'G5:2', 'C6:2', 'B5:2', 'A5:2', 'G5:2', 'E5:4',
-            'D5:2', 'F5:2', 'A5:2', 'G5:2', 'C5:4', '.:4'],
+            'D5:2', 'F5:2', 'A5:2', 'G5:2', 'C5:4', '.:4',
+            // B phrase (higher, contrasting)
+            'C6:2', 'B5:2', 'A5:2', 'G5:2', 'A5:2', 'G5:2', 'E5:4',
+            'F5:2', 'E5:2', 'D5:2', 'C5:2', 'D5:4', 'G5:4',
+            'E5:2', 'C5:2', 'G4:2', 'C5:2', 'E5:2', 'G5:2', 'C6:4',
+            'B5:2', 'G5:2', 'D5:2', 'F5:2', 'C5:4', '.:4'],
         bass: ['C3:2', 'C3:2', 'G2:2', 'C3:2', 'F2:2', 'F2:2', 'C3:2', 'G2:2',
-            'C3:2', 'C3:2', 'G2:2', 'G2:2', 'A2:2', 'E2:2', 'G2:2', 'G2:2']
+            'C3:2', 'C3:2', 'G2:2', 'G2:2', 'A2:2', 'E2:2', 'F2:2', 'G2:2',
+            'C3:2', 'G2:2', 'C3:2', 'E3:2', 'F2:2', 'C3:2', 'G2:2', 'G2:2',
+            'A2:2', 'E2:2', 'F2:2', 'G2:2', 'C3:2', 'G2:2', 'C3:2', 'G2:2']
     },
     museum: {
         bpm: 116,
-        lead: ['D5:2', 'G5:2', 'B5:2', 'G5:2', 'A5:2', 'D5:2', 'B4:4',
+        lead: [
+            // A phrase
+            'D5:2', 'G5:2', 'B5:2', 'G5:2', 'A5:2', 'D5:2', 'B4:4',
             'C5:2', 'E5:2', 'G5:2', 'E5:2', 'D5:2', 'B4:2', 'G4:4',
             'B4:2', 'D5:2', 'G5:2', 'A5:2', 'B5:4', 'A5:2', 'G5:2',
-            'D5:2', 'E5:2', 'D5:2', 'B4:2', 'G4:4', '.:4'],
+            'D5:2', 'E5:2', 'D5:2', 'B4:2', 'G4:4', '.:4',
+            // B phrase (brighter, up to the dominant)
+            'G5:2', 'A5:2', 'B5:2', 'D6:2', 'B5:2', 'A5:2', 'G5:4',
+            'C6:2', 'B5:2', 'A5:2', 'G5:2', 'A5:4', 'D5:4',
+            'E5:2', 'G5:2', 'B5:2', 'A5:2', 'G5:2', 'D5:2', 'G4:4',
+            'A4:2', 'B4:2', 'D5:2', 'G5:2', 'G4:4', '.:4'],
         bass: ['G2:2', 'D3:2', 'G2:2', 'D3:2', 'C3:2', 'G2:2', 'D3:2', 'D3:2',
-            'E3:2', 'B2:2', 'C3:2', 'G2:2', 'D3:2', 'D3:2', 'G2:2', 'G2:2']
+            'E3:2', 'B2:2', 'C3:2', 'G2:2', 'D3:2', 'D3:2', 'G2:2', 'G2:2',
+            'G2:2', 'D3:2', 'E3:2', 'B2:2', 'C3:2', 'G2:2', 'A2:2', 'D3:2',
+            'B2:2', 'D3:2', 'C3:2', 'G2:2', 'D3:2', 'D3:2', 'G2:2', 'G2:2']
     },
     cat: {
         bpm: 140,
-        lead: ['A5:1', 'A5:1', 'E5:2', 'F5:1', 'F5:1', 'C5:2', 'D5:2', 'E5:2',
+        lead: [
+            // A phrase
+            'A5:1', 'A5:1', 'E5:2', 'F5:1', 'F5:1', 'C5:2', 'D5:2', 'E5:2',
             'C5:2', 'A4:2', 'A5:1', 'A5:1', 'E5:2', 'G5:1', 'G5:1', 'D5:2',
-            'F5:2', 'E5:2', 'D5:2', 'C5:2', 'A5:1', 'B5:1', 'C6:4', '.:2'],
+            'F5:2', 'E5:2', 'D5:2', 'C5:2', 'A5:1', 'B5:1', 'C6:4', '.:2',
+            // B phrase (skippy and cute)
+            'C6:2', 'A5:2', 'C6:2', 'A5:2', 'B5:1', 'A5:1', 'G5:2', 'E5:2',
+            'D5:2', 'E5:2', 'F5:2', 'E5:2', 'D5:2', 'C5:2', 'A4:4',
+            'E5:1', 'F5:1', 'G5:2', 'A5:1', 'B5:1', 'C6:2', 'A5:2', 'E5:2',
+            'F5:2', 'E5:2', 'C5:2', 'D5:2', 'C5:4', '.:2'],
         bass: ['A2:2', 'E3:2', 'A2:2', 'E3:2', 'F2:2', 'C3:2', 'F2:2', 'C3:2',
-            'C3:2', 'G2:2', 'C3:2', 'G2:2', 'D3:2', 'A2:2', 'E3:2', 'E3:2']
+            'C3:2', 'G2:2', 'C3:2', 'G2:2', 'D3:2', 'A2:2', 'E3:2', 'E3:2',
+            'A2:2', 'E3:2', 'C3:2', 'G2:2', 'F2:2', 'C3:2', 'D3:2', 'A2:2',
+            'C3:2', 'G2:2', 'D3:2', 'A2:2', 'E3:2', 'E3:2', 'A2:2', 'E3:2']
     }
 };
 
-var MUS = { on: false, theme: null, tracks: [], hatTime: 0, timer: null, step: 0.2 };
+// per-season musical feel: tempo scaling and brightness
+var SEASON_MUS = {
+    spring: { tempoMul: 1.00, bright: 1.00 },
+    summer: { tempoMul: 1.06, bright: 1.15 },
+    autumn: { tempoMul: 0.97, bright: 0.88 },
+    winter: { tempoMul: 0.92, bright: 0.78 }
+};
+
+var MUS = { on: false, theme: null, tracks: [], hatTime: 0, timer: null, step: 0.2, baseBpm: 134, night: 0 };
 var noiseBuf = null;
 
 function getNoise()
@@ -5421,14 +5491,39 @@ function startMusic(themeId)
     }
     stopMusicTimer();
     var t0 = audioCtx.currentTime + 0.15;
+    MUS.baseBpm = song.bpm;
     MUS.step = 60 / song.bpm / 2;
+    MUS.leadType = 'square';
     MUS.tracks = [
-        { seq: song.lead, i: 0, next: t0, type: 'square', vol: 0.032 },
+        { seq: song.lead, i: 0, next: t0, lead: true, vol: 0.032 },
         { seq: song.bass, i: 0, next: t0, type: 'triangle', vol: 0.05 }
     ];
     MUS.hatTime = t0;
     MUS.on = true;
+    updateMusicMood();
     MUS.timer = setInterval(musicTick, 25);
+}
+
+// smoothly bend tempo, timbre, brightness and volume by season + night
+function updateMusicMood()
+{
+    if (!audioCtx || !musicFilter || !S)
+    {
+        return;
+    }
+    var night = S.opened ? nightFactor() : 0;
+    MUS.night = night;
+    var sm = SEASON_MUS[seasonOf(S.month)] || SEASON_MUS.spring;
+    // season tempo (night is slightly calmer too)
+    MUS.step = (60 / MUS.baseBpm / 2) / (sm.tempoMul * (1 - night * 0.08));
+    // night switches the lead to a mellow triangle and drops the hats
+    MUS.leadType = (night > 0.5) ? 'triangle' : 'square';
+    // brightness: bright day/season = open filter; night = muffled
+    var cutoff = 700 + (7200 * sm.bright) * (1 - night * 0.82);
+    var vol = 0.7 * (0.55 + sm.bright * 0.45) * (1 - night * 0.38);
+    var now = audioCtx.currentTime;
+    musicFilter.frequency.setTargetAtTime(cutoff, now, 0.4);
+    musicGain.gain.setTargetAtTime(vol, now, 0.4);
 }
 
 function musicTick()
@@ -5442,6 +5537,7 @@ function musicTick()
         stopMusic();
         return;
     }
+    updateMusicMood();
     var ahead = audioCtx.currentTime + 0.16;
     for (var k = 0; k < MUS.tracks.length; k++)
     {
@@ -5457,17 +5553,22 @@ function musicTick()
             var dur = len * MUS.step;
             if (name !== '.')
             {
-                tone(noteFreq(name), dur * 0.9, tr.next, tr.type, tr.vol, musicGain);
+                var ty = tr.lead ? MUS.leadType : tr.type;
+                tone(noteFreq(name), dur * 0.9, tr.next, ty, tr.vol, musicGain);
             }
             tr.next += dur;
             tr.i = (tr.i + 1) % tr.seq.length;
         }
     }
+    // hats fade out at night for a calmer feel
     var hguard = 0;
     while (MUS.hatTime < ahead && hguard < 32)
     {
         hguard++;
-        hat(MUS.hatTime);
+        if (MUS.night < 0.5)
+        {
+            hat(MUS.hatTime);
+        }
         MUS.hatTime += MUS.step * 2;
     }
 }
@@ -6873,24 +6974,11 @@ function renderWorld()
 }
 
 // day -> dusk -> night -> dawn ambience on a slow real-time loop (60s)
+// factors are shared with the music mood engine (nightFactor/duskFactor)
 function drawAmbientLight()
 {
-    var ph = (GAME_TIME % 60) / 60;
-    var dusk = 0;
-    var night = 0;
-    if (ph > 0.55 && ph <= 0.65)
-    {
-        dusk = (ph - 0.55) / 0.10;
-    }
-    if (ph > 0.65 && ph <= 0.90)
-    {
-        night = Math.min(1, (ph - 0.65) / 0.06);
-        dusk = Math.max(0, 1 - (ph - 0.65) / 0.08);
-    }
-    if (ph > 0.90)
-    {
-        night = Math.max(0, 1 - (ph - 0.90) / 0.10);
-    }
+    var dusk = duskFactor();
+    var night = nightFactor();
     var mw = MAP_W * TS;
     var mh = MAP_H * TS;
     if (dusk > 0)
