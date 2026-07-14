@@ -1686,6 +1686,263 @@ THEME_CAT.quests = makeQuests(THEME_CAT, {
     q12: { name: '좋은 궁합 만들기', desc: '궁합이 좋은 냥이들을 2칸 이내에 배치하자! (😻)', reward: { g: 4000, fame: 20 }, check: function (S) { return qGoodPairExists(S); }, prog: null }
 });
 
+// =====================================================================
+// content expansion 2: extra facilities, species, combos, events
+// =====================================================================
+
+// --- 4 new facility types (shared stats, per-theme names) ---
+function addFac(theme, id, name, desc, stats)
+{
+    var def = { kind: 'fac', name: name, desc: desc };
+    for (var k in stats)
+    {
+        def[k] = stats[k];
+    }
+    theme.build[id] = def;
+}
+
+var FOODCART_STATS = { w: 1, h: 1, cost: 450,  maint: 15, need: 'hunger', sell: 60,  lvReq: 1 };
+var GARDEN_STATS =   { w: 2, h: 1, cost: 900,  maint: 20, need: 'energy', sell: 0,   lvReq: 2, aura: 2 };
+var FOUNTAIN_STATS = { w: 2, h: 2, cost: 3200, maint: 80, sell: 0,        lvReq: 2, aura: 4 };
+var GAME_STATS =     { w: 1, h: 1, cost: 1200, maint: 40, fun: true,      sell: 100, lvReq: 3 };
+
+addFac(THEME_AQUA, 'foodcart', '오징어 구이 카트', '고소한 냄새로 손님을 부르는 포장마차', FOODCART_STATS);
+addFac(THEME_AQUA, 'garden', '휴게 정원', '꽃 사이에서 쉬어가는 작은 정원', GARDEN_STATS);
+addFac(THEME_AQUA, 'fountain', '고래 분수', '수족관의 상징. 주변 수조의 매력을 크게 올린다', FOUNTAIN_STATS);
+addFac(THEME_AQUA, 'game', '바다 오락 코너', '미니게임으로 즐거움 UP! 이용료를 받는다', GAME_STATS);
+
+addFac(THEME_MUSEUM, 'foodcart', '호떡 카트', '달콤한 냄새로 손님을 부르는 포장마차', FOODCART_STATS);
+addFac(THEME_MUSEUM, 'garden', '유적 정원', '돌담과 꽃 사이에서 쉬어가는 정원', GARDEN_STATS);
+addFac(THEME_MUSEUM, 'fountain', '공룡 동상', '박물관의 상징. 주변 전시의 매력을 크게 올린다', FOUNTAIN_STATS);
+addFac(THEME_MUSEUM, 'game', '고고학 체험 코너', '모래 속 유물 찾기 체험! 이용료를 받는다', GAME_STATS);
+
+addFac(THEME_CAT, 'foodcart', '츄르 카트', '고소한 냄새로 손님을 부르는 간식 카트', FOODCART_STATS);
+addFac(THEME_CAT, 'garden', '캣닢 정원', '캣닢 꽃밭에서 쉬어가는 작은 정원', GARDEN_STATS);
+addFac(THEME_CAT, 'fountain', '고양이 동상', '카페의 상징. 주변 냥이 자리의 매력을 크게 올린다', FOUNTAIN_STATS);
+addFac(THEME_CAT, 'game', '냥이 오락 코너', '고양이 미니게임으로 즐거움 UP! 이용료를 받는다', GAME_STATS);
+
+var EXTRA_FACS = ['foodcart', 'garden', 'fountain', 'game'];
+THEME_AQUA.facOrder = BUILD_FAC_ORDER.concat(EXTRA_FACS).concat(['stage']);
+THEME_MUSEUM.facOrder = BUILD_FAC_ORDER.concat(EXTRA_FACS);
+THEME_CAT.facOrder = BUILD_FAC_ORDER.concat(EXTRA_FACS);
+
+// --- 4 new species per theme (24 total each) ---
+THEME_AQUA.species.crab =    { name: '임금게',     cls: 1, touchOK: true,  rpCost: 35,  stock: 280,  pop: 10, rpY: 2,  shape: 'crab',    c1: '#e05838', c2: '#f8a888', lvReq: 1, desc: '옆으로 걷는 집게 장군' };
+THEME_AQUA.species.axolotl = { name: '우파루파',   cls: 1, touchOK: true,  rpCost: 50,  stock: 380,  pop: 13, rpY: 2,  shape: 'axolotl', c1: '#f8c8d0', c2: '#f090a8', lvReq: 2, desc: '분홍빛 미소의 인기쟁이' };
+THEME_AQUA.species.walrus =  { name: '바다코끼리', cls: 3, touchOK: false, rpCost: 210, stock: 1650, pop: 35, rpY: 5,  shape: 'seal',    c1: '#9a7a62', c2: '#e8e0d0', lvReq: 3, show: true, desc: '긴 엄니가 자랑인 거구. 공연 가능!' };
+THEME_AQUA.species.orca =    { name: '범고래',     cls: 4, touchOK: false, rpCost: 560, stock: 4800, pop: 75, rpY: 11, shape: 'dolphin', c1: '#181c22', c2: '#f0f4f8', lvReq: 5, show: true, desc: '바다의 왕. 흑백의 카리스마' };
+THEME_AQUA.speciesOrder.splice(THEME_AQUA.speciesOrder.indexOf('seahorse'), 0, 'crab');
+THEME_AQUA.speciesOrder.splice(THEME_AQUA.speciesOrder.indexOf('jelly'), 0, 'axolotl');
+THEME_AQUA.speciesOrder.splice(THEME_AQUA.speciesOrder.indexOf('manta'), 0, 'walrus');
+THEME_AQUA.speciesOrder.splice(THEME_AQUA.speciesOrder.indexOf('whaleshark'), 0, 'orca');
+
+THEME_MUSEUM.species.footprint = { name: '공룡 발자국',   cls: 1, touchOK: true,  rpCost: 40,  stock: 300,  pop: 11, rpY: 2,  shape: 'footprint', c1: '#c8b498', c2: '#8a7458', lvReq: 1, desc: '1억 년 전의 산책 흔적' };
+THEME_MUSEUM.species.cavepaint = { name: '동굴 벽화',     cls: 2, touchOK: false, rpCost: 105, stock: 820,  pop: 19, rpY: 3,  shape: 'mural',     c1: '#8a7a66', c2: '#d88030', lvReq: 2, desc: '최초의 화가가 남긴 그림' };
+THEME_MUSEUM.species.goldmask =  { name: '황금 가면',     cls: 3, touchOK: false, rpCost: 230, stock: 1750, pop: 37, rpY: 5,  shape: 'mask',      c1: '#e8c040', c2: '#c89020', lvReq: 3, desc: '고대 왕의 미소' };
+THEME_MUSEUM.species.skull =     { name: '크리스탈 해골', cls: 4, touchOK: false, rpCost: 540, stock: 4600, pop: 72, rpY: 10, shape: 'skull',     c1: '#cfe6f2', c2: '#ffffff', lvReq: 5, desc: '전설 속 수수께끼의 유물' };
+THEME_MUSEUM.speciesOrder.splice(THEME_MUSEUM.speciesOrder.indexOf('ammonite'), 0, 'footprint');
+THEME_MUSEUM.speciesOrder.splice(THEME_MUSEUM.speciesOrder.indexOf('trilobite'), 0, 'cavepaint');
+THEME_MUSEUM.speciesOrder.splice(THEME_MUSEUM.speciesOrder.indexOf('tricera'), 0, 'goldmask');
+THEME_MUSEUM.speciesOrder.splice(THEME_MUSEUM.speciesOrder.indexOf('dinoegg'), 0, 'skull');
+
+THEME_CAT.species.cow =       { name: '카오스냥',   cls: 1, touchOK: true,  rpCost: 35,  stock: 280,  pop: 10, rpY: 2,  shape: 'cat', c1: '#f8f8f8', c2: '#282830', lvReq: 1, pers: '활발', desc: '얼룩무늬 개구쟁이' };
+THEME_CAT.species.singapura = { name: '싱가푸라',   cls: 1, touchOK: true,  rpCost: 50,  stock: 380,  pop: 13, rpY: 2,  shape: 'cat', c1: '#d8bc98', c2: '#b09068', lvReq: 2, pers: '얌전', desc: '세상에서 가장 작은 고양이' };
+THEME_CAT.species.savannah =  { name: '사바나캣',   cls: 3, touchOK: false, rpCost: 240, stock: 1850, pop: 38, rpY: 6,  shape: 'cat', c1: '#d8a850', c2: '#907030', lvReq: 3, pers: '활발', desc: '야생의 우아함을 지닌 장신 냥이' };
+THEME_CAT.species.starcat =   { name: '별빛냥',     cls: 4, touchOK: false, rpCost: 560, stock: 4800, pop: 75, rpY: 11, shape: 'cat', c1: '#7888d8', c2: '#c8d0f8', lvReq: 5, pers: '애교', desc: '밤하늘에서 온 신비의 냥이' };
+THEME_CAT.speciesOrder.splice(THEME_CAT.speciesOrder.indexOf('calico'), 0, 'cow');
+THEME_CAT.speciesOrder.splice(THEME_CAT.speciesOrder.indexOf('siamese'), 0, 'singapura');
+THEME_CAT.speciesOrder.splice(THEME_CAT.speciesOrder.indexOf('persian'), 0, 'savannah');
+THEME_CAT.speciesOrder.splice(THEME_CAT.speciesOrder.indexOf('legend'), 0, 'starcat');
+
+// --- new combos ---
+THEME_AQUA.combos.push(
+    { id: 'plaza', name: '분수 광장', fame: 25, req: [{ type: 'fountain' }, { type: 'bench' }], hint: '시원한 분수 곁의 쉼터' },
+    { id: 'orcashow', name: '전설의 쇼', fame: 55, req: [{ species: 'orca' }, { type: 'stage' }], hint: '바다의 왕에게 무대를 준다면' }
+);
+THEME_MUSEUM.combos.push(
+    { id: 'goldenroom', name: '황금의 방', fame: 45, req: [{ species: 'goldmask' }, { species: 'crown' }], hint: '황금은 황금을 부른다' },
+    { id: 'ancientgarden', name: '고대의 정원', fame: 25, req: [{ type: 'fountain' }, { type: 'flower' }], hint: '동상 곁에 꽃을 심으면' }
+);
+THEME_CAT.combos.push(
+    { id: 'catplaza', name: '냥이 광장', fame: 25, req: [{ type: 'fountain' }, { type: 'bench' }], hint: '동상 곁의 쉼터' },
+    { id: 'starnight', name: '별빛 축제', fame: 55, req: [{ species: 'starcat' }, { type: 'photo' }], hint: '별빛냥과 인생샷을' }
+);
+
+// --- new special exhibitions (museum) ---
+THEME_MUSEUM.specials.push(
+    { id: 'mystery', name: '미스터리전', members: ['skull', 'mummy', 'goldmask'], need: 2, cost: 2800, desc: '풀리지 않는 수수께끼들' },
+    { id: 'giants', name: '거인의 시대전', members: ['mammoth', 'trex', 'footprint'], need: 2, cost: 3000, desc: '거대 생물들의 발자취' }
+);
+
+// --- new events (3 per theme) ---
+THEME_AQUA.events.push(
+    {
+        id: 'midnight', weight: 2, choice: true,
+        cond: function (S) { return S.fame >= 100; },
+        title: '🌙 심야 수족관 제안',
+        text: '지역 방송에서 심야 수족관 특집을 제안했습니다.\n야간 조명 비용이 들지만 화제가 될 거예요! (800G)',
+        yes: '개최한다 (800G)', no: '다음에',
+        applyYes: function (S)
+        {
+            if (S.money < 800)
+            {
+                return '자금이 부족했습니다...';
+            }
+            S.money -= 800;
+            S.fame += 25;
+            return '밤의 수족관이 화제가 됐다! 인기 +25';
+        },
+        applyNo: function (S) { return '다음 기회에...'; }
+    },
+    {
+        id: 'cleanup', weight: 2,
+        cond: function (S) { return S.level >= 2; },
+        title: '🌊 바다 정화 캠페인',
+        text: '직원들과 함께 해변 정화 활동에 참여했습니다.\n연구 자료도 잔뜩 수집했어요!',
+        apply: function (S) { S.rp += 30; S.fame += 8; return '연구P +30, 인기 +8'; }
+    },
+    {
+        id: 'rival', weight: 2,
+        cond: function (S) { return S.fame >= 60; },
+        title: '👓 라이벌 관장의 방문',
+        text: '옆 동네 수족관 관장이 시찰을 왔습니다.',
+        apply: function (S)
+        {
+            if (S.rank <= 20)
+            {
+                S.fame += 12;
+                return '"이럴 수가... 완벽하잖아!" 라이벌이 감탄했다. 인기 +12';
+            }
+            S.fame += 4;
+            return '"아직 멀었군." 코웃음을 쳤지만 배울 건 있었다. 인기 +4';
+        }
+    }
+);
+THEME_MUSEUM.events.push(
+    {
+        id: 'appraisal', weight: 3, choice: true,
+        cond: function (S) { return S.level >= 2; },
+        title: '🔍 유물 감정 의뢰',
+        text: '시민이 골동품을 들고 왔습니다.\n"할아버지의 유품인데... 진품일까요?" (발굴P 15)',
+        yes: '감정한다 (발굴P 15)', no: '정중히 거절',
+        applyYes: function (S)
+        {
+            if (S.rp < 15)
+            {
+                return '발굴P가 부족했습니다...';
+            }
+            S.rp -= 15;
+            if (Math.random() < 0.55)
+            {
+                S.money += 1500;
+                S.fame += 10;
+                return '진품이었다! 감정료 +1500G, 인기 +10';
+            }
+            S.fame += 3;
+            return '아쉽게도 모조품... 하지만 친절함에 인기 +3';
+        },
+        applyNo: function (S) { return '다음 기회에...'; }
+    },
+    {
+        id: 'lecture', weight: 2, choice: true,
+        cond: function (S) { return S.fame >= 80; },
+        title: '📚 역사 특강 제안',
+        text: '유명 교수가 박물관에서 어린이 특강을 열고 싶어합니다.\n준비 비용이 듭니다. (600G)',
+        yes: '개최한다 (600G)', no: '다음에',
+        applyYes: function (S)
+        {
+            if (S.money < 600)
+            {
+                return '자금이 부족했습니다...';
+            }
+            S.money -= 600;
+            S.fame += 20;
+            S.rp += 15;
+            return '특강 대성공! 인기 +20, 발굴P +15';
+        },
+        applyNo: function (S) { return '다음 기회에...'; }
+    },
+    {
+        id: 'rival', weight: 2,
+        cond: function (S) { return S.fame >= 60; },
+        title: '👓 라이벌 관장의 방문',
+        text: '옆 동네 박물관 관장이 시찰을 왔습니다.',
+        apply: function (S)
+        {
+            if (S.rank <= 20)
+            {
+                S.fame += 12;
+                return '"이 소장품들은 대체..." 라이벌이 감탄했다. 인기 +12';
+            }
+            S.fame += 4;
+            return '"아직 멀었군." 코웃음을 쳤지만 배울 건 있었다. 인기 +4';
+        }
+    }
+);
+THEME_CAT.events.push(
+    {
+        id: 'adoptday', weight: 2,
+        cond: function (S) { return S.level >= 2; },
+        title: '🏠 입양의 날',
+        text: '유기묘 입양 행사를 열었습니다.\n아기 고양이들이 좋은 집사를 만났어요!',
+        apply: function (S) { S.money += 900; S.fame += 15; return '분양 후원금 +900G, 인기 +15'; }
+    },
+    {
+        id: 'grooming', weight: 2, choice: true,
+        cond: function (S) { return S.fame >= 80; },
+        title: '✂️ 고양이 미용 대회',
+        text: '전국 냥이 미용 대회가 열립니다.\n우리 카페 대표 냥이를 내보낼까요? (참가비 500G)',
+        yes: '참가한다 (500G)', no: '다음에',
+        applyYes: function (S)
+        {
+            if (S.money < 500)
+            {
+                return '자금이 부족했습니다...';
+            }
+            S.money -= 500;
+            if (Math.random() < 0.6)
+            {
+                S.fame += 25;
+                S.money += 1000;
+                return '우승! 🏆 상금 +1000G, 인기 +25';
+            }
+            S.fame += 5;
+            return '아쉽게 준우승... 그래도 인기 +5';
+        },
+        applyNo: function (S) { return '다음 기회에...'; }
+    },
+    {
+        id: 'rival', weight: 2,
+        cond: function (S) { return S.fame >= 60; },
+        title: '👓 라이벌 사장의 방문',
+        text: '옆 동네 냥카페 사장이 시찰을 왔습니다.',
+        apply: function (S)
+        {
+            if (S.rank <= 20)
+            {
+                S.fame += 12;
+                return '"냥이들이 왜 이렇게 행복해 보이지..." 라이벌이 감탄했다. 인기 +12';
+            }
+            S.fame += 4;
+            return '"아직 멀었군." 코웃음을 쳤지만 배울 건 있었다. 인기 +4';
+        }
+    }
+);
+
+// --- endgame quests appended to each 17-step chain (21 total) ---
+function appendEndgameQuests(theme)
+{
+    theme.quests.push(
+        { name: '비밀 스폿 8개 발견', desc: '아직 숨어있는 조합이 많다! (정보 메뉴에 힌트)', reward: { g: 15000 }, check: function (S) { return S.combosDone.length >= 8; }, prog: function (S) { return Math.min(S.combosDone.length, 8) + '/8'; } },
+        { name: '인기 500 달성', desc: '전국이 주목하는 명소가 되어보자!', reward: { rp: 250 }, check: function (S) { return S.fame >= 500; }, prog: function (S) { return Math.min(S.fame, 500) + '/500'; } },
+        { name: '도감 완성하기', desc: '모든 ' + theme.text.speciesWord + '를 수집하자!', reward: { g: 30000, fame: 50 }, check: function (S) { return S.unlocked.length >= theme.speciesOrder.length; }, prog: function (S) { return S.unlocked.length + '/' + theme.speciesOrder.length; } },
+        { name: '전국 1위 달성!', desc: '매년 3월의 랭킹 발표에서 정상에 서자!', reward: { g: 50000, fame: 100 }, check: function (S) { return S.rank === 1; }, prog: null }
+    );
+}
+appendEndgameQuests(THEME_AQUA);
+appendEndgameQuests(THEME_MUSEUM);
+appendEndgameQuests(THEME_CAT);
+
 var THEMES = { aqua: THEME_AQUA, museum: THEME_MUSEUM, cat: THEME_CAT };
 var THEME_ORDER = ['aqua', 'museum', 'cat'];
 
@@ -2199,6 +2456,64 @@ var SHAPES = {
         '...11..11..11.',
         '...22..22..22.'
     ],
+    crab: [
+        '11.......11',
+        '.1..1.1..1.',
+        '..1111111..',
+        '.111e1e111.',
+        '..1111111..',
+        '.1..1.1..1.',
+        '11.......11'
+    ],
+    axolotl: [
+        '.2........',
+        '2211111...',
+        '2e11111111',
+        '2211111111',
+        '.2.11..11.',
+        '...11..11.'
+    ],
+    footprint: [
+        '.111111.',
+        '11212121',
+        '11121211',
+        '11222111',
+        '11222211',
+        '11122111',
+        '.111111.'
+    ],
+    mural: [
+        '1111111111',
+        '1211121111',
+        '1112111211',
+        '1211212121',
+        '1112111111',
+        '1121121211',
+        '1111211121',
+        '1111111111'
+    ],
+    mask: [
+        '.111111.',
+        '11111111',
+        '1e1111e1',
+        '11111111',
+        '11122111',
+        '11111111',
+        '12222221',
+        '11111111',
+        '.111111.'
+    ],
+    skull: [
+        '.1111111.',
+        '111111111',
+        '11e111e11',
+        '111111111',
+        '1111e1111',
+        '.1111111.',
+        '.1121211.',
+        '.1212121.',
+        '..11111..'
+    ],
     // ---- cats ----
     cat: [
         '.1....1..',
@@ -2655,6 +2970,117 @@ function drawFacility(ctx, o, wx, wy, t)
         return;
     }
 
+    if (o.type === 'foodcart')
+    {
+        // little cart with wheels and a parasol
+        ctx.fillStyle = '#c8503a';
+        ctx.fillRect(wx + 5, wy + 12, W - 10, 10);
+        ctx.fillStyle = '#f0e0c0';
+        ctx.fillRect(wx + 7, wy + 14, W - 14, 4);
+        ctx.fillStyle = '#3a3230';
+        ctx.beginPath();
+        ctx.arc(wx + 10, wy + 25, 3, 0, Math.PI * 2);
+        ctx.arc(wx + W - 10, wy + 25, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // parasol
+        ctx.fillStyle = '#8a5a28';
+        ctx.fillRect(wx + W / 2 - 1, wy + 2, 2, 12);
+        for (var pu = 0; pu < 3; pu++)
+        {
+            ctx.fillStyle = (pu % 2 === 0) ? '#ffd040' : '#ff7040';
+            ctx.fillRect(wx + 6 + pu * ((W - 12) / 3), wy + 4, (W - 12) / 3, 4);
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.fillRect(wx + 8, wy + 8, W - 16, 1);
+        return;
+    }
+    if (o.type === 'garden')
+    {
+        // flowerbed strip with a tiny bench in the middle
+        ctx.fillStyle = '#48a838';
+        roundRect(ctx, wx + 3, wy + 6, W - 6, H - 10, 5);
+        ctx.fill();
+        ctx.fillStyle = '#3a8a2c';
+        roundRect(ctx, wx + 3, wy + H - 9, W - 6, 5, 3);
+        ctx.fill();
+        var gcols = ['#ff5070', '#ffd040', '#ff90c0', '#ffffff', '#b080f0'];
+        for (var gf = 0; gf < 10; gf++)
+        {
+            ctx.fillStyle = gcols[gf % gcols.length];
+            ctx.fillRect(wx + 6 + (gf * 11) % (W - 12), wy + 8 + ((gf * 7) % (H - 18)), 3, 3);
+        }
+        // bench
+        ctx.fillStyle = '#a87038';
+        ctx.fillRect(wx + W / 2 - 8, wy + H / 2 - 3, 16, 4);
+        ctx.fillStyle = '#5a3a18';
+        ctx.fillRect(wx + W / 2 - 7, wy + H / 2 + 1, 3, 5);
+        ctx.fillRect(wx + W / 2 + 4, wy + H / 2 + 1, 3, 5);
+        return;
+    }
+    if (o.type === 'fountain')
+    {
+        // stone basin with a theme statue on a pedestal
+        ctx.fillStyle = '#98a0a8';
+        roundRect(ctx, wx + 3, wy + 3, W - 6, H - 6, 10);
+        ctx.fill();
+        ctx.fillStyle = '#6fc0dd';
+        roundRect(ctx, wx + 8, wy + 8, W - 16, H - 16, 8);
+        ctx.fill();
+        // ripple rings
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 1;
+        var rr = 4 + ((t * 10) % 10);
+        ctx.beginPath();
+        ctx.arc(wx + W / 2, wy + H / 2, rr, 0, Math.PI * 2);
+        ctx.stroke();
+        // pedestal + statue silhouette
+        ctx.fillStyle = '#c8ccd0';
+        ctx.fillRect(wx + W / 2 - 7, wy + H / 2 + 2, 14, 6);
+        var statueSp = null;
+        if (THEME && THEME.id === 'aqua')
+        {
+            statueSp = { shape: 'dolphin', c1: '#b8c4cc', c2: '#d8e0e4' };
+        }
+        else
+        {
+            if (THEME && THEME.id === 'museum')
+            {
+                statueSp = { shape: 'trex', c1: '#b8bcc0', c2: '#d0d4d8' };
+            }
+            else
+            {
+                statueSp = { shape: 'cat', c1: '#b8bcc0', c2: '#d0d4d8' };
+            }
+        }
+        var srows = SHAPES[statueSp.shape];
+        var spx = Math.max(1, Math.min(Math.floor((W - 24) / srows[0].length), Math.floor((H - 26) / srows.length)));
+        drawCreature(ctx, statueSp, wx + W / 2 - srows[0].length * spx / 2, wy + H / 2 - srows.length * spx + 2, spx, false, 0);
+        // spray dots
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        for (var sd = 0; sd < 4; sd++)
+        {
+            var sy2 = (t * 26 + sd * 9) % 14;
+            ctx.fillRect(wx + W / 2 - 6 + sd * 4, wy + H / 2 - 8 - sy2 + 8, 2, 2);
+        }
+        return;
+    }
+    if (o.type === 'game')
+    {
+        // arcade cabinet with a glowing screen
+        ctx.fillStyle = '#3a3048';
+        roundRect(ctx, wx + 5, wy + 3, W - 10, H - 7, 4);
+        ctx.fill();
+        var glow = 0.5 + Math.abs(Math.sin(t * 3)) * 0.5;
+        ctx.fillStyle = 'rgba(90,220,255,' + glow.toFixed(2) + ')';
+        ctx.fillRect(wx + 8, wy + 6, W - 16, 9);
+        ctx.fillStyle = '#181420';
+        ctx.fillRect(wx + 8, wy + 17, W - 16, 4);
+        ctx.fillStyle = '#ff5070';
+        ctx.fillRect(wx + 10, wy + 23, 4, 4);
+        ctx.fillStyle = '#ffd040';
+        ctx.fillRect(wx + 17, wy + 23, 4, 4);
+        return;
+    }
     if (b.stage)
     {
         // show pool with stage platform
@@ -3898,19 +4324,26 @@ function visitorDecide(v)
             return;
         }
     }
-    // photo zone sometimes
+    // fun facilities sometimes (photo zone, arcade corner)
     if (!v.photoDone && Math.random() < 0.18)
     {
+        var funs = [];
         for (var p = 0; p < S.objects.length; p++)
         {
-            if (S.objects[p].type === 'photo')
+            var fp = S.objects[p];
+            if (fp.type === 'photo' || BUILD[fp.type].fun)
             {
-                if (goToObject(v, S.objects[p], 'photo'))
-                {
-                    v.photoDone = true;
-                    return;
-                }
-                break;
+                funs.push(fp);
+            }
+        }
+        if (funs.length > 0)
+        {
+            var funPick = funs[Math.floor(Math.random() * funs.length)];
+            var funState = (funPick.type === 'photo') ? 'photo' : 'use';
+            if (goToObject(v, funPick, funState))
+            {
+                v.photoDone = true;
+                return;
             }
         }
     }
@@ -4197,6 +4630,15 @@ function updateVisitor(v, dt)
                 if (fo.type === 'gift')
                 {
                     v.sat += 6;
+                }
+                if (fb.fun)
+                {
+                    v.sat += 8;
+                    addEmote(v.x, v.y - 26, 'note');
+                    if (Math.random() < 0.3)
+                    {
+                        gainFame(1);
+                    }
                 }
             }
             v.state = 'decide';
