@@ -786,7 +786,9 @@ var EXP_W = [12, 16, 20];   // usable width per expansion stage
 var ENTRANCE = { x: 5, y: 12 };
 var DAY_MS = 1250;      // real ms per game day at speed x1
 var DAYS_PER_MONTH = 24;
-var MAX_VISITORS = 34;
+var MAX_VISITORS = 34;        // normal concurrent ceiling
+var BURST_BONUS = 10;         // extra slots opened up during a group visit
+var MAX_VISITORS_BURST = 44;  // ceiling while a group visit is under way
 var COMBO_RANGE = 4;    // chebyshev distance between combo member objects
 
 // theme-selected globals, assigned by loadTheme()
@@ -1031,7 +1033,7 @@ function makeEvents(es)
             id: 'group', weight: 4,
             cond: function (S) { return S.fame >= 30; },
             title: es.group[0], text: es.group[1],
-            apply: function (S) { S.groupBurst = 14; return '관람객 대량 방문!'; }
+            apply: function (S) { S.groupBurst = 14; return '관람객이 잔뜩 몰려옵니다!'; }
         },
         {
             id: 'storm', weight: 2,
@@ -3634,6 +3636,16 @@ function maxVisitorsNow()
     {
         m = MAX_VISITORS;
     }
+    // a group visit needs room to actually pack the place out, otherwise
+    // the crowd is blocked by the normal ceiling and nothing happens
+    if (S.groupBurst > 0)
+    {
+        m += BURST_BONUS;
+        if (m > MAX_VISITORS_BURST)
+        {
+            m = MAX_VISITORS_BURST;
+        }
+    }
     return m;
 }
 
@@ -4243,23 +4255,26 @@ function advanceSim(dtMs)
         // paced spawning: accumulator plus a minimum gap between arrivals
         S.spawnAcc += expectedPerDay() * (dtMs / DAY_MS);
         S.spawnCd -= dt;
-        if (S.groupBurst > 0)
+        // groupBurst is a countdown in seconds: a crowd streams in fast
+        var bursting = (S.groupBurst > 0);
+        if (bursting)
         {
-            S.spawnAcc += dt * 1.2;
-            S.groupBurst -= dt * 1.2;
+            S.groupBurst -= dt;
             if (S.groupBurst < 0)
             {
                 S.groupBurst = 0;
             }
+            S.spawnAcc += dt * 4;
         }
-        if (S.spawnAcc > 4)
+        var accCap = bursting ? 8 : 4;
+        if (S.spawnAcc > accCap)
         {
-            S.spawnAcc = 4;
+            S.spawnAcc = accCap;
         }
         if (S.spawnAcc >= 1 && S.spawnCd <= 0 && VISITORS.length < maxVisitorsNow())
         {
             S.spawnAcc -= 1;
-            S.spawnCd = (S.groupBurst > 0) ? 0.2 : 0.4 + Math.random() * 0.5;
+            S.spawnCd = bursting ? 0.15 : 0.4 + Math.random() * 0.5;
             spawnVisitor();
         }
 
@@ -4472,8 +4487,9 @@ function tryOpenPark()
                 onClick: function ()
                 {
                     S.opened = true;
-                    S.groupBurst = 4;
-                    S.spawnAcc = 1;
+                    // a few first guests arrive promptly, but at the normal
+                    // pace: the crowd-cap bonus is reserved for group visits
+                    S.spawnAcc = 3;
                     sfx('fanfare');
                     showToast('🎉 드디어 개장! 첫 손님이 옵니다!');
                     saveGame(true);
@@ -7023,23 +7039,34 @@ function renderWorld()
     drawAmbientLight();
     ctx.restore();
 
-    // special exhibition banner on the wall band (museum)
+    // event banners on the wall band, stacked so they never overlap
+    var bannerY = WALL_H + 3;
     if (S.specialEx)
     {
         var plan = getSpecialPlan(S.specialEx.id);
         if (plan)
         {
-            var bw = 210;
-            ctx.fillStyle = 'rgba(160,60,120,0.9)';
-            roundRect(ctx, cv.width / 2 - bw / 2, WALL_H + 3, bw, 18, 8);
-            ctx.fill();
-            ctx.fillStyle = '#ffe9b0';
-            ctx.font = 'bold 11px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('📜 ' + plan.name + ' 개최 중! (' + S.specialEx.days + '일)', cv.width / 2, WALL_H + 16);
-            ctx.textAlign = 'left';
+            drawBanner('📜 ' + plan.name + ' 개최 중! (' + S.specialEx.days + '일)', bannerY, 'rgba(160,60,120,0.9)');
+            bannerY += 22;
         }
     }
+    if (S.groupBurst > 0)
+    {
+        drawBanner('🎒 단체 손님이 몰려오는 중!', bannerY, 'rgba(40,120,80,0.9)');
+    }
+}
+
+function drawBanner(text, y, bg)
+{
+    ctx.font = 'bold 11px sans-serif';
+    var bw = ctx.measureText(text).width + 24;
+    ctx.fillStyle = bg;
+    roundRect(ctx, cv.width / 2 - bw / 2, y, bw, 18, 8);
+    ctx.fill();
+    ctx.fillStyle = '#ffe9b0';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, cv.width / 2, y + 13);
+    ctx.textAlign = 'left';
 }
 
 // day -> dusk -> night -> dawn ambience on a slow real-time loop (60s)
