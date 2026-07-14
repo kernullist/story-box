@@ -857,13 +857,13 @@ function makeBuild(labels)
 
 // ---------- shared tables ----------
 var VTYPES = [
-    { id: 'kid',     name: '꼬마',   money: [200, 500],   speed: 46, hair: '#3a2a10', body: '#ffd040', pants: '#4a90d0', skin: '#ffd8a8', kid: true },
-    { id: 'boy',     name: '학생',   money: [300, 800],   speed: 42, hair: '#202020', body: '#3a70c0', pants: '#303848', skin: '#ffd8a8' },
-    { id: 'girl',    name: '여학생', money: [300, 900],   speed: 42, hair: '#7a4a20', body: '#ff88b0', pants: '#c03050', skin: '#ffe0b8' },
-    { id: 'lady',    name: '숙녀',   money: [500, 1500],  speed: 38, hair: '#c07830', body: '#e05070', pants: '#f0e0e8', skin: '#ffe0b8' },
-    { id: 'man',     name: '아저씨', money: [600, 1800],  speed: 38, hair: '#303030', body: '#607080', pants: '#404850', skin: '#f0c890' },
-    { id: 'grandma', name: '할머니', money: [400, 1200],  speed: 30, hair: '#d8d8d8', body: '#8060a0', pants: '#605070', skin: '#f0c890' },
-    { id: 'rich',    name: '부자',   money: [2000, 5000], speed: 36, hair: '#e8c040', body: '#f0f0f0', pants: '#f0f0f0', skin: '#ffd8a8', rare: true }
+    { id: 'kid',     name: '꼬마',   money: [350, 800],   speed: 56, hair: '#3a2a10', body: '#ffd040', pants: '#4a90d0', skin: '#ffd8a8', kid: true },
+    { id: 'boy',     name: '학생',   money: [450, 1100],  speed: 52, hair: '#202020', body: '#3a70c0', pants: '#303848', skin: '#ffd8a8' },
+    { id: 'girl',    name: '여학생', money: [450, 1200],  speed: 52, hair: '#7a4a20', body: '#ff88b0', pants: '#c03050', skin: '#ffe0b8' },
+    { id: 'lady',    name: '숙녀',   money: [800, 2000],  speed: 47, hair: '#c07830', body: '#e05070', pants: '#f0e0e8', skin: '#ffe0b8' },
+    { id: 'man',     name: '아저씨', money: [900, 2300],  speed: 47, hair: '#303030', body: '#607080', pants: '#404850', skin: '#f0c890' },
+    { id: 'grandma', name: '할머니', money: [650, 1600],  speed: 38, hair: '#d8d8d8', body: '#8060a0', pants: '#605070', skin: '#f0c890' },
+    { id: 'rich',    name: '부자',   money: [2800, 6500], speed: 45, hair: '#e8c040', body: '#f0f0f0', pants: '#f0f0f0', skin: '#ffd8a8', rare: true }
 ];
 
 var NEED_LABEL = { hunger: '배고픔', thirst: '목마름', toilet: '화장실', energy: '피로' };
@@ -3629,7 +3629,7 @@ function addDust(o)
 // concurrent visitor cap grows with fame and grade
 function maxVisitorsNow()
 {
-    var m = 6 + Math.floor(S.fame / 25) + S.level * 2;
+    var m = 11 + Math.floor(S.fame / 16) + S.level * 3;
     if (m > MAX_VISITORS)
     {
         m = MAX_VISITORS;
@@ -3675,7 +3675,7 @@ function spawnVisitor()
         stateT: 0,
         path: null,
         target: null,
-        needs: { hunger: 20 + Math.random() * 30, thirst: 20 + Math.random() * 30, toilet: 10 + Math.random() * 20, energy: 10 + Math.random() * 20 },
+        needs: { hunger: 30 + Math.random() * 30, thirst: 28 + Math.random() * 30, toilet: 12 + Math.random() * 25, energy: 12 + Math.random() * 25 },
         penalized: {},
         dirs: shuffledDirs(),
         strolls: 0,
@@ -3837,7 +3837,7 @@ function visitorDecide(v)
     for (var n = 0; n < needs.length; n++)
     {
         var need = needs[n];
-        if (v.needs[need] >= 75)
+        if (v.needs[need] >= 58)
         {
             var fac = facilityForNeed(need);
             if (fac && goToObject(v, fac, 'use'))
@@ -3847,11 +3847,11 @@ function visitorDecide(v)
             if (!v.penalized[need])
             {
                 v.penalized[need] = true;
-                v.sat -= 8;
+                v.sat -= 6;
                 addEmote(v.x, v.y - 24, need);
                 addEmote(v.x + 8, v.y - 30, 'angry');
             }
-            v.needs[need] = 55; // gives up for a while
+            v.needs[need] = 25; // gives up, and won't nag again for a while
         }
     }
     // done viewing -> gift shop -> leave
@@ -3878,7 +3878,7 @@ function visitorDecide(v)
         return;
     }
     // wander around a bit between attractions
-    if (v.strolls < 3 && Math.random() < 0.22)
+    if (v.strolls < 2 && Math.random() < 0.10)
     {
         if (goToRandomTile(v))
         {
@@ -4008,7 +4008,7 @@ function updateVisitor(v, dt)
             {
                 v.state = 'idle';
                 v.stateT = 0;
-                v.idleDur = 0.6 + Math.random() * 1.0;
+                v.idleDur = 0.35 + Math.random() * 0.55;
                 v.moving = false;
                 v.dir = (Math.random() < 0.5) ? 'up' : 'down';
                 return;
@@ -4105,7 +4105,7 @@ function updateVisitor(v, dt)
             v.heartDone = true;
             addEmote(v.x, v.y - 26, 'heart');
         }
-        if (v.stateT >= 1.7)
+        if (v.stateT >= 1.25)
         {
             v.heartDone = false;
             v.viewed.push(obj2.id);
@@ -4210,7 +4210,7 @@ function feeFactor()
 
 function expectedPerDay()
 {
-    var e = (0.8 + S.fame * 0.03 + S.level * 0.8) * feeFactor();
+    var e = (1.6 + S.fame * 0.05 + S.level * 1.2) * feeFactor();
     e *= THEME.seasonMult[seasonOf(S.month)];
     if (S.stormMonth)
     {
@@ -4259,7 +4259,7 @@ function advanceSim(dtMs)
         if (S.spawnAcc >= 1 && S.spawnCd <= 0 && VISITORS.length < maxVisitorsNow())
         {
             S.spawnAcc -= 1;
-            S.spawnCd = (S.groupBurst > 0) ? 0.35 : 0.8 + Math.random() * 0.9;
+            S.spawnCd = (S.groupBurst > 0) ? 0.2 : 0.4 + Math.random() * 0.5;
             spawnVisitor();
         }
 
