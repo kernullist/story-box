@@ -373,6 +373,7 @@ html, body
 .modal .btnRow
 {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     justify-content: center;
     padding: 10px;
@@ -381,7 +382,8 @@ html, body
 
 .modal .btnRow .btn
 {
-    min-width: 110px;
+    min-width: 88px;
+    padding: 8px 10px;
 }
 
 .repTable
@@ -3735,17 +3737,24 @@ function stockTank(o, spId)
     return true;
 }
 
-function tankAppeal(o)
+// itemized appeal calculation, so the UI can explain the exact numbers
+function tankAppealParts(o)
 {
     var b = BUILD[o.type];
+    var parts = {
+        base: b.base, sp: 0, spLv: 1, aura: 0, auraCapped: false,
+        comboMult: 1 + S.combosDone.length * 0.06,
+        moodMult: 1, compatMult: 1, specialMult: 1, total: 1
+    };
     if (!o.species)
     {
-        return 1;
+        return parts;
     }
     var sp = SPECIES[o.species];
     var lv = S.spLv[o.species] || 1;
-    var a = b.base + sp.pop * (1 + 0.25 * (lv - 1));
-    // flower and sign aura from adjacent tiles
+    parts.spLv = lv;
+    parts.sp = sp.pop * (1 + 0.25 * (lv - 1));
+    // aura from decorations within 2 tiles (capped at +8)
     var aura = 0;
     for (var i = 0; i < S.objects.length; i++)
     {
@@ -3761,15 +3770,14 @@ function tankAppeal(o)
             aura += fb.aura;
         }
     }
-    a += Math.min(aura, 8);
-    // combo bonus: +6% per discovered combo
-    a *= (1 + S.combosDone.length * 0.06);
+    parts.auraCapped = aura > 8;
+    parts.aura = Math.min(aura, 8);
     // cat cafe: mood and neighbor compatibility affect appeal
     if (THEME.feature === 'mood')
     {
         var mood = (o.mood === undefined) ? 80 : o.mood;
-        a *= (0.5 + mood / 160);
-        a *= catCompatMult(o);
+        parts.moodMult = 0.5 + mood / 160;
+        parts.compatMult = catCompatMult(o);
     }
     // museum: active special exhibition boosts member artifacts
     if (THEME.feature === 'expedition' && S.specialEx)
@@ -3777,10 +3785,16 @@ function tankAppeal(o)
         var plan = getSpecialPlan(S.specialEx.id);
         if (plan && plan.members.indexOf(o.species) >= 0)
         {
-            a *= 1.5;
+            parts.specialMult = 1.5;
         }
     }
-    return a;
+    parts.total = (parts.base + parts.sp + parts.aura) * parts.comboMult * parts.moodMult * parts.compatMult * parts.specialMult;
+    return parts;
+}
+
+function tankAppeal(o)
+{
+    return tankAppealParts(o).total;
 }
 
 // neighbor cat zones within distance 2, excluding self
@@ -6185,13 +6199,18 @@ function showMonthReport(rep)
 }
 
 // ---------- panels ----------
+// the sim pauses while any bottom panel (build/research/info/menu) is open
+var PANEL_OPEN = false;
+
 function closePanel()
 {
     $('panelHost').innerHTML = '';
+    PANEL_OPEN = false;
 }
 
 function panelShell(title)
 {
+    PANEL_OPEN = true;
     var host = $('panelHost');
     host.innerHTML = '';
     var p = document.createElement('div');
@@ -6482,6 +6501,24 @@ function openSpecialPanel()
     }
 }
 
+// human-readable name for one combo requirement
+function comboReqName(req)
+{
+    if (req.type)
+    {
+        return '「' + BUILD[req.type].name + '」';
+    }
+    if (req.species)
+    {
+        return '「' + SPECIES[req.species].name + '」 전시';
+    }
+    if (req.cls)
+    {
+        return THEME.text.clsNames[req.cls].replace('~', '') + ' 이상에 전시';
+    }
+    return '?';
+}
+
 // ----- info panel -----
 function openInfoPanel()
 {
@@ -6493,17 +6530,21 @@ function openInfoPanel()
         (next ? '<div class="sub">다음 승급: 인기 ' + fmt(next.fame) + ' + 누적 관람객 ' + fmt(next.vis) + '명</div>' : '<div class="sub good">최고 등급 달성!</div>') +
         '</div></div>';
 
-    html += '<div class="card"><div class="mid"><div class="nm">✨ 발견한 스폿 (' + S.combosDone.length + '/' + COMBOS.length + ')</div>';
+    var comboBonusPct = Math.round(S.combosDone.length * 6);
+    html += '<div class="card"><div class="mid"><div class="nm">✨ 비밀 스폿 (' + S.combosDone.length + '/' + COMBOS.length + ')</div>' +
+        '<div class="sub">필요한 것들을 <b>서로 ' + COMBO_RANGE + '칸 이내</b>에 두면 발견!<br>' +
+        '발견 1개당 모든 ' + THEME.text.enclosureWord + ' 매력 <b>+6%</b> (현재 +' + comboBonusPct + '%)</div>';
     for (var i = 0; i < COMBOS.length; i++)
     {
         var c = COMBOS[i];
+        var reqTxt = c.req.map(comboReqName).join(' + ');
         if (S.combosDone.indexOf(c.id) >= 0)
         {
-            html += '<div class="sub good">✔ ' + c.name + '</div>';
+            html += '<div class="sub good">✔ ' + c.name + ' — ' + reqTxt + '</div>';
         }
         else
         {
-            html += '<div class="sub">❓ ??? — 힌트: ' + c.hint + '</div>';
+            html += '<div class="sub">❓ <b>' + c.name + '</b> — 필요: ' + reqTxt + ' · 발견 시 인기 <b>+' + c.fame + '</b><br>&nbsp;&nbsp;<span style="color:#b08a3a;">힌트: ' + c.hint + '</span></div>';
         }
     }
     html += '</div></div>';
@@ -6754,6 +6795,42 @@ function showImportModal()
     });
 }
 
+// concrete effect lines (exact numbers and ranges) for a facility
+function facEffectLines(b)
+{
+    var lines = [];
+    if (b.need)
+    {
+        var l = '🙂 손님의 <b>' + NEED_LABEL[b.need] + '</b> 해결 (만족 +3)';
+        if (b.sell > 0)
+        {
+            l += ' · 이용 시 <b>+' + b.sell + 'G</b>';
+        }
+        lines.push(l);
+        if (b.rest)
+        {
+            lines.push('💤 피로도 함께 회복');
+        }
+    }
+    if (b.aura)
+    {
+        lines.push('✨ <b>주변 2칸</b> 안의 ' + THEME.text.enclosureWord + ' 매력 <b>+' + b.aura + '</b>씩 (합계 최대 +8)');
+    }
+    if (b.fun)
+    {
+        lines.push('🎉 손님 만족 <b>+8</b> · 이용료 <b>+' + b.sell + 'G</b> · 가끔 인기 +1');
+    }
+    if (b.gift)
+    {
+        lines.push('🎁 손님이 나가기 전에 들러요 · 구매 시 <b>+' + b.sell + 'G</b>, 만족 +6');
+    }
+    if (b.stage)
+    {
+        lines.push('🎤 공연 개최 가능 (쿨다운 6일) · 근처 손님이 <b>공연료 80G</b>씩 내고 만족 +12');
+    }
+    return lines;
+}
+
 // ----- object tap popup -----
 function openObjectModal(o)
 {
@@ -6761,7 +6838,17 @@ function openObjectModal(o)
     if (b.kind !== 'tank')
     {
         var facBtns = [];
-        var facBody = '<div style="text-align:center;">' + b.desc + '<br><span class="small">유지비 ' + b.maint + 'G/월</span></div>';
+        var facBody = '<div style="text-align:center;">' + b.desc + '</div>';
+        var fLines = facEffectLines(b);
+        if (b.type === 'photo')
+        {
+            fLines.push('📸 손님이 사진을 찍고 만족 <b>+6</b> · 40% 확률로 인기 +1');
+        }
+        if (fLines.length > 0)
+        {
+            facBody += '<div style="margin-top:6px;background:#fff0c8;border:2px solid #e0b050;border-radius:8px;padding:6px 8px;font-size:12px;">' + fLines.join('<br>') + '</div>';
+        }
+        facBody += '<div style="text-align:center;margin-top:4px;" class="small">유지비 ' + b.maint + 'G/월</div>';
         if (b.stage)
         {
             var performer = firstShowSpecies();
@@ -6803,7 +6890,26 @@ function openObjectModal(o)
     if (o.species)
     {
         var sp = SPECIES[o.species];
-        bodyHtml += '현재: <b>' + sp.name + '</b> (매력 ' + Math.floor(tankAppeal(o)) + ')';
+        var ap = tankAppealParts(o);
+        bodyHtml += '현재: <b>' + sp.name + '</b> (매력 <b>' + Math.floor(ap.total) + '</b>)';
+        // itemized appeal breakdown
+        var apLines = [];
+        apLines.push('기본(' + b.name + ') <b>+' + ap.base + '</b>');
+        apLines.push(sp.name + ' Lv' + ap.spLv + ' <b>+' + (Math.round(ap.sp * 10) / 10) + '</b>' + (ap.spLv < 5 ? ' <span class="small">(강화 시 레벨당 +25%)</span>' : ''));
+        apLines.push('주변 2칸 장식 오라 <b>+' + ap.aura + '</b>' + (ap.auraCapped ? ' (최대치)' : ' <span class="small">(최대 +8)</span>'));
+        if (S.combosDone.length > 0)
+        {
+            apLines.push('스폿 ' + S.combosDone.length + '개 보너스 <b>×' + ap.comboMult.toFixed(2) + '</b>');
+        }
+        if (isMood)
+        {
+            apLines.push('기분 <b>×' + ap.moodMult.toFixed(2) + '</b> · 궁합 <b>×' + ap.compatMult.toFixed(2) + '</b>');
+        }
+        if (ap.specialMult > 1)
+        {
+            apLines.push('📜 기획전 보너스 <b>×1.5</b>');
+        }
+        bodyHtml += '<div style="margin-top:6px;background:#fff0c8;border:2px solid #e0b050;border-radius:8px;padding:6px 8px;font-size:12px;text-align:left;">📊 매력 계산<br>' + apLines.join('<br>') + '</div>';
         if (isMood)
         {
             var mood = (o.mood === undefined) ? 80 : o.mood;
@@ -7854,7 +7960,8 @@ function frame(t)
     }
     if (S)
     {
-        if (!PAUSED)
+        // pause while a modal or a system panel is open
+        if (!PAUSED && !PANEL_OPEN)
         {
             advanceSim(dt * S.speed);
         }
