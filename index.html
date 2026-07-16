@@ -781,7 +781,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '2.0';
+var GAME_VER = '2.1';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 26;        // decorative wall band height above the map (world px)
@@ -5717,7 +5717,9 @@ function initAudio()
 {
     if (audioCtx)
     {
-        if (audioCtx.state === 'suspended')
+        // iOS can leave the context 'suspended' OR 'interrupted'
+        // (home-screen apps after backgrounding) - resume on any non-running state
+        if (audioCtx.state !== 'running')
         {
             try
             {
@@ -5747,6 +5749,85 @@ function initAudio()
     catch (e)
     {
         audioCtx = null;
+    }
+}
+
+// iOS mutes WebAudio while the device is in silent mode unless an
+// HTMLAudio element switches the audio session to playback. Loop a
+// tiny silent wav (generated at runtime) on the first user gesture.
+var unlockAudioEl = null;
+
+function makeSilentWavUrl()
+{
+    var sr = 8000;
+    var n = 800; // 0.1s of silence
+    var buf = new ArrayBuffer(44 + n * 2);
+    var v = new DataView(buf);
+    function ws(o, s)
+    {
+        for (var i = 0; i < s.length; i++)
+        {
+            v.setUint8(o + i, s.charCodeAt(i));
+        }
+    }
+    ws(0, 'RIFF');
+    v.setUint32(4, 36 + n * 2, true);
+    ws(8, 'WAVE');
+    ws(12, 'fmt ');
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true);
+    v.setUint32(28, sr * 2, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    ws(36, 'data');
+    v.setUint32(40, n * 2, true);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+
+function unlockIosAudio()
+{
+    if (unlockAudioEl)
+    {
+        if (unlockAudioEl.paused)
+        {
+            var pr0 = unlockAudioEl.play();
+            if (pr0 && pr0.catch)
+            {
+                pr0.catch(function () {});
+            }
+        }
+        return;
+    }
+    try
+    {
+        unlockAudioEl = document.createElement('audio');
+        unlockAudioEl.setAttribute('playsinline', '');
+        unlockAudioEl.loop = true;
+        unlockAudioEl.volume = 0.01;
+        unlockAudioEl.src = makeSilentWavUrl();
+        var pr = unlockAudioEl.play();
+        if (pr && pr.catch)
+        {
+            pr.catch(function () {});
+        }
+    }
+    catch (e)
+    {
+        unlockAudioEl = null;
+    }
+}
+
+// called on every user gesture: unlock/resume audio and make sure the
+// BGM is running if it should be
+function audioUnlockTap()
+{
+    initAudio();
+    unlockIosAudio();
+    if (S && S.bgmOn && THEME && !MUS.on && audioCtx)
+    {
+        startMusic(THEME.id);
     }
 }
 
@@ -6659,6 +6740,35 @@ function openMenuPanel()
         }
     });
     row.appendChild(bBgm);
+
+    var bTest = document.createElement('button');
+    bTest.className = 'btn';
+    bTest.textContent = '🔔 사운드 테스트';
+    bTest.addEventListener('click', function ()
+    {
+        audioUnlockTap();
+        var wasMuted = S.muted;
+        S.muted = false;
+        sfx('fanfare');
+        S.muted = wasMuted;
+        var state = audioCtx ? audioCtx.state : '생성 실패';
+        var note = [];
+        note.push('오디오: ' + state);
+        if (wasMuted)
+        {
+            note.push('효과음 꺼짐');
+        }
+        if (!S.bgmOn)
+        {
+            note.push('배경음악 꺼짐');
+        }
+        if (state === 'running' && !wasMuted)
+        {
+            note.push('팡파레가 안 들리면 기기 음량/무음 모드를 확인하세요');
+        }
+        showToast(note.join(' · '));
+    });
+    row.appendChild(bTest);
 
     if (S.opened)
     {
@@ -8221,7 +8331,14 @@ function boot()
     document.addEventListener('visibilitychange', function ()
     {
         lastT = performance.now();
+        if (!document.hidden)
+        {
+            initAudio();
+        }
     });
+
+    // any first tap anywhere unlocks/resumes audio (iOS requirement)
+    document.addEventListener('pointerdown', audioUnlockTap, true);
 
     showLauncher();
     requestAnimationFrame(function (t)
