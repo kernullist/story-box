@@ -781,7 +781,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '2.1';
+var GAME_VER = '2.2';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 26;        // decorative wall band height above the map (world px)
@@ -4694,6 +4694,65 @@ function expectedPerDay()
     return e;
 }
 
+// cosmetic particles (floats/emotes/dust) age independently of the sim,
+// so they keep animating while the game is paused for placement
+function updateFx(dt)
+{
+    for (var f = FLOATS.length - 1; f >= 0; f--)
+    {
+        FLOATS[f].t += dt;
+        if (FLOATS[f].t > 1.6)
+        {
+            FLOATS.splice(f, 1);
+        }
+    }
+    for (var e = EMOTES.length - 1; e >= 0; e--)
+    {
+        EMOTES[e].t += dt;
+        if (EMOTES[e].t > 1.1)
+        {
+            EMOTES.splice(e, 1);
+        }
+    }
+    for (var pf = PUFFS.length - 1; pf >= 0; pf--)
+    {
+        PUFFS[pf].t += dt;
+        PUFFS[pf].x += PUFFS[pf].vx * dt;
+        if (PUFFS[pf].t > 0.55)
+        {
+            PUFFS.splice(pf, 1);
+        }
+    }
+}
+
+// does this placeable participate in any undiscovered-or-discovered spot?
+// type: build type id; species: current species for exhibits (may be null)
+function inAnyCombo(type, species)
+{
+    var b = BUILD[type];
+    for (var c = 0; c < COMBOS.length; c++)
+    {
+        var reqs = COMBOS[c].req;
+        for (var r = 0; r < reqs.length; r++)
+        {
+            var q = reqs[r];
+            if (q.type && q.type === type)
+            {
+                return true;
+            }
+            if (q.species && species && q.species === species)
+            {
+                return true;
+            }
+            if (q.cls && b.kind === 'tank' && b.cls >= q.cls)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 var questT = 0;
 
 function advanceSim(dtMs)
@@ -4751,32 +4810,7 @@ function advanceSim(dtMs)
         }
     }
 
-    // floats / emotes
-    for (var f = FLOATS.length - 1; f >= 0; f--)
-    {
-        FLOATS[f].t += dt;
-        if (FLOATS[f].t > 1.6)
-        {
-            FLOATS.splice(f, 1);
-        }
-    }
-    for (var e = EMOTES.length - 1; e >= 0; e--)
-    {
-        EMOTES[e].t += dt;
-        if (EMOTES[e].t > 1.1)
-        {
-            EMOTES.splice(e, 1);
-        }
-    }
-    for (var pf = PUFFS.length - 1; pf >= 0; pf--)
-    {
-        PUFFS[pf].t += dt;
-        PUFFS[pf].x += PUFFS[pf].vx * dt;
-        if (PUFFS[pf].t > 0.55)
-        {
-            PUFFS.splice(pf, 1);
-        }
-    }
+    updateFx(dt);
 
     // calendar only runs after the grand opening
     if (S.opened)
@@ -7224,7 +7258,7 @@ function updateHUD()
     {
         // time-of-day icon follows the ambient light cycle
         var phase = (nightFactor() > 0.5) ? '🌙' : ((duskFactor() > 0.3) ? '🌆' : '☀️');
-        var pauseTag = (PAUSED || PANEL_OPEN) ? '⏸ ' : '';
+        var pauseTag = (PAUSED || PANEL_OPEN || MODE.kind !== 'normal') ? '⏸ ' : '';
         $('hudDate').textContent = pauseTag + phase + seasonIcon + ' ' + S.year + '년차 ' + S.month + '월 ' + S.day + '일';
     }
     else
@@ -7380,6 +7414,9 @@ function setPlaceBarText(armed)
 var cv = null;
 var ctx = null;
 var lastT = 0;
+// always-running clock for UI pulses (ghost highlight etc.) even while
+// the sim itself is paused
+var UI_TIME = 0;
 
 function setupCanvas()
 {
@@ -7629,102 +7666,9 @@ function renderGround()
     ctx.textAlign = 'left';
 }
 
-// highlight the exact effect area of the inspected / placed object:
-// green = decoration aura (2 tiles), blue = show stage reach, amber =
-// where decorations must sit to boost this exhibit
-function drawRangeOverlay()
+// draw one dashed effect-zone rectangle, clipped to the usable map
+function drawZoneRect(px0, py0, pw, ph, fill, stroke)
 {
-    var x = 0;
-    var y = 0;
-    var w = 1;
-    var h = 1;
-    var kind = null;
-    if ((MODE.kind === 'place' || MODE.kind === 'move') && MODE.ghost)
-    {
-        var gb = BUILD[MODE.build];
-        x = MODE.ghost.tx;
-        y = MODE.ghost.ty;
-        w = ftW(MODE.build, MODE.rot);
-        h = ftH(MODE.build, MODE.rot);
-        if (gb.aura)
-        {
-            kind = 'aura';
-        }
-        else
-        {
-            if (gb.stage)
-            {
-                kind = 'stage';
-            }
-            else
-            {
-                if (gb.kind === 'tank')
-                {
-                    kind = 'tank';
-                }
-            }
-        }
-    }
-    else
-    {
-        if (INSPECT && S.objects.indexOf(INSPECT) >= 0)
-        {
-            var ib = BUILD[INSPECT.type];
-            x = INSPECT.x;
-            y = INSPECT.y;
-            w = oW(INSPECT);
-            h = oH(INSPECT);
-            if (ib.aura)
-            {
-                kind = 'aura';
-            }
-            else
-            {
-                if (ib.stage)
-                {
-                    kind = 'stage';
-                }
-                else
-                {
-                    if (ib.kind === 'tank')
-                    {
-                        kind = 'tank';
-                    }
-                }
-            }
-        }
-    }
-    if (!kind)
-    {
-        return;
-    }
-    var fill;
-    var stroke;
-    var px0;
-    var py0;
-    var pw;
-    var ph;
-    if (kind === 'stage')
-    {
-        // show reach: visitors within 4.5 tiles of the stage center
-        fill = 'rgba(80,160,255,0.16)';
-        stroke = 'rgba(60,130,230,0.75)';
-        px0 = ((x + w / 2) - 4.5) * TS;
-        py0 = ((y + h / 2) - 4.5) * TS;
-        pw = 9 * TS;
-        ph = 9 * TS;
-    }
-    else
-    {
-        // aura rule: objects whose top-left is within 2 tiles
-        fill = (kind === 'aura') ? 'rgba(80,200,120,0.20)' : 'rgba(255,190,60,0.16)';
-        stroke = (kind === 'aura') ? 'rgba(40,160,90,0.75)' : 'rgba(215,155,40,0.75)';
-        px0 = (x - 2) * TS;
-        py0 = (y - 2) * TS;
-        pw = 5 * TS;
-        ph = 5 * TS;
-    }
-    // clip to the usable map
     var maxW = usableW() * TS;
     var maxH = MAP_H * TS;
     var cx0 = Math.max(0, px0);
@@ -7742,6 +7686,69 @@ function drawRangeOverlay()
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(cx0 + 1, cy0 + 1, cx1 - cx0 - 2, cy1 - cy0 - 2);
     ctx.setLineDash([]);
+}
+
+// highlight the exact effect areas of the inspected / placed object:
+// purple = spot combo range (4 tiles), green = decoration aura (2 tiles),
+// blue = show stage reach, amber = where decorations boost this exhibit
+function drawRangeOverlay()
+{
+    var x = 0;
+    var y = 0;
+    var w = 1;
+    var h = 1;
+    var type = null;
+    var species = null;
+    if ((MODE.kind === 'place' || MODE.kind === 'move') && MODE.ghost)
+    {
+        type = MODE.build;
+        x = MODE.ghost.tx;
+        y = MODE.ghost.ty;
+        w = ftW(type, MODE.rot);
+        h = ftH(type, MODE.rot);
+        species = MODE.moveObj ? MODE.moveObj.species : null;
+    }
+    else
+    {
+        if (INSPECT && S.objects.indexOf(INSPECT) >= 0)
+        {
+            type = INSPECT.type;
+            x = INSPECT.x;
+            y = INSPECT.y;
+            w = oW(INSPECT);
+            h = oH(INSPECT);
+            species = INSPECT.species || null;
+        }
+    }
+    if (!type)
+    {
+        return;
+    }
+    var b = BUILD[type];
+    // spot combo range first (largest, so smaller zones draw on top).
+    // combo rule: member top-left corners within COMBO_RANGE tiles
+    if (inAnyCombo(type, species))
+    {
+        var cr = COMBO_RANGE;
+        drawZoneRect((x - cr) * TS, (y - cr) * TS, (cr * 2 + 1) * TS, (cr * 2 + 1) * TS,
+            'rgba(190,110,235,0.13)', 'rgba(165,80,215,0.8)');
+    }
+    if (b.stage)
+    {
+        // show reach: visitors within 4.5 tiles of the stage center
+        drawZoneRect(((x + w / 2) - 4.5) * TS, ((y + h / 2) - 4.5) * TS, 9 * TS, 9 * TS,
+            'rgba(80,160,255,0.16)', 'rgba(60,130,230,0.75)');
+    }
+    if (b.aura)
+    {
+        drawZoneRect((x - 2) * TS, (y - 2) * TS, 5 * TS, 5 * TS,
+            'rgba(80,200,120,0.20)', 'rgba(40,160,90,0.75)');
+    }
+    if (b.kind === 'tank')
+    {
+        drawZoneRect((x - 2) * TS, (y - 2) * TS, 5 * TS, 5 * TS,
+            'rgba(255,190,60,0.16)', 'rgba(215,155,40,0.75)');
+    }
 }
 
 function renderWorld()
@@ -7835,16 +7842,17 @@ function renderWorld()
             drawObject(ctx, fake, GAME_TIME);
         }
         ctx.globalAlpha = 1;
-        // pulsing confirm border on the armed tile
+        // pulsing confirm border on the armed tile (UI clock: keeps
+        // pulsing even while the sim is paused for placement)
         if (armed)
         {
-            var pulse = 0.5 + Math.abs(Math.sin(GAME_TIME * 5)) * 0.5;
+            var pulse = 0.5 + Math.abs(Math.sin(UI_TIME * 5)) * 0.5;
             ctx.strokeStyle = 'rgba(255,210,40,' + pulse.toFixed(2) + ')';
             ctx.lineWidth = 3;
             ctx.strokeRect(gx * TS + 1, gy * TS + 1, gw - 2, gh - 2);
             ctx.font = '15px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('👆', gx * TS + gw / 2, gy * TS - 4 + Math.sin(GAME_TIME * 6) * 2);
+            ctx.fillText('👆', gx * TS + gw / 2, gy * TS - 4 + Math.sin(UI_TIME * 6) * 2);
             ctx.textAlign = 'left';
         }
     }
@@ -8259,12 +8267,18 @@ function frame(t)
     {
         dt = 100;
     }
+    UI_TIME += dt / 1000;
     if (S)
     {
-        // pause while a modal or a system panel is open
-        if (!PAUSED && !PANEL_OPEN)
+        // pause while a modal, a system panel, or placement mode is active
+        if (!PAUSED && !PANEL_OPEN && MODE.kind === 'normal')
         {
             advanceSim(dt * S.speed);
+        }
+        else
+        {
+            // keep cosmetic particles (dust, floats) animating while paused
+            updateFx(dt / 1000);
         }
         renderWorld();
         updateHUD();
