@@ -780,6 +780,9 @@ input[type="range"]
 // the player this game was made for
 var OWNER_NAME = '은혜';
 
+// shown in the launcher/menu so a stale cached client is easy to spot
+var GAME_VER = '2.0';
+
 var TS = 32;            // tile size in world px
 var WALL_H = 26;        // decorative wall band height above the map (world px)
 var MAP_W = 20;         // full map width in tiles
@@ -4956,6 +4959,22 @@ function tryOpenPark()
     });
 }
 
+// close the park and return to preparation mode: time stops, guests go
+// home, and the player can rebuild calmly before reopening
+function closePark()
+{
+    S.opened = false;
+    VISITORS = [];
+    S.spawnAcc = 0;
+    S.spawnCd = 0;
+    S.groupBurst = 0;
+    FEED = null;
+    SHOW = null;
+    sfx('sell');
+    showToast('🌙 폐장했습니다. 느긋하게 정비한 뒤 다시 개장하세요!');
+    saveGame(true);
+}
+
 // ---------- feeding time (aquarium feature) ----------
 function updateFeeding(dt)
 {
@@ -6077,6 +6096,8 @@ function musicTick()
 var MODE = { kind: 'normal', build: null, ghost: null };
 var modalQueue = [];
 var modalShowing = false;
+// object whose effect range is being shown on the map (set by openObjectModal)
+var INSPECT = null;
 
 function $(id)
 {
@@ -6131,6 +6152,7 @@ function nextModal()
     {
         modalShowing = false;
         PAUSED = false;
+        INSPECT = null;
         dim.style.display = 'none';
         host.innerHTML = '';
         return;
@@ -6638,6 +6660,29 @@ function openMenuPanel()
     });
     row.appendChild(bBgm);
 
+    if (S.opened)
+    {
+        var bClose = document.createElement('button');
+        bClose.className = 'btn';
+        bClose.textContent = '🌙 폐장하기 (정비 모드)';
+        bClose.addEventListener('click', function ()
+        {
+            closePanel();
+            queueModal({
+                title: '🌙 폐장하기',
+                body: '<div style="text-align:center;">오늘은 여기까지! 폐장하면<br>손님들이 집으로 돌아가고 <b>시간이 멈춰요.</b><br>느긋하게 시설을 정비한 뒤<br><b>🎉 개장하기</b> 버튼으로 언제든 다시 열 수 있어요.</div>',
+                buttons: [
+                    {
+                        label: '폐장한다', cls: 'blue',
+                        onClick: function () { closePark(); }
+                    },
+                    { label: '취소', cls: 'gray' }
+                ]
+            });
+        });
+        row.appendChild(bClose);
+    }
+
     var bHelp = document.createElement('button');
     bHelp.className = 'btn';
     bHelp.textContent = '📖 도움말';
@@ -6714,7 +6759,7 @@ function openMenuPanel()
     credit.className = 'small';
     credit.style.textAlign = 'center';
     credit.style.padding = '8px';
-    credit.textContent = THEME.name + ' — 스토리 박스';
+    credit.textContent = THEME.name + ' — 스토리 박스 v' + GAME_VER;
     body.appendChild(credit);
 }
 
@@ -6831,9 +6876,29 @@ function facEffectLines(b)
     return lines;
 }
 
+// sell needs a confirmation step (and the confirm modal pauses the game)
+function confirmSell(o)
+{
+    var b = BUILD[o.type];
+    var refund = Math.floor(b.cost / 2);
+    var extra = (b.kind === 'tank' && o.species) ? '<br><span class="bad small">전시 중인 ' + SPECIES[o.species].name + '의 비용은 환불되지 않아요!</span>' : '';
+    queueModal({
+        title: '🗑️ 판매 확인',
+        body: '<div style="text-align:center;">「' + b.name + '」을(를) 정말 판매할까요?<br>환불 <b>+' + fmt(refund) + 'G</b>' + extra + '</div>',
+        buttons: [
+            {
+                label: '판매한다', cls: 'red',
+                onClick: function () { sellObject(o); }
+            },
+            { label: '취소', cls: 'gray' }
+        ]
+    });
+}
+
 // ----- object tap popup -----
 function openObjectModal(o)
 {
+    INSPECT = o;
     var b = BUILD[o.type];
     if (b.kind !== 'tank')
     {
@@ -6878,7 +6943,7 @@ function openObjectModal(o)
         });
         facBtns.push({
             label: '판매 +' + fmt(Math.floor(b.cost / 2)) + 'G', cls: 'red',
-            onClick: function () { sellObject(o); }
+            onClick: function () { confirmSell(o); }
         });
         facBtns.push({ label: '닫기', cls: 'gray' });
         queueModal({ title: b.name, body: facBody, buttons: facBtns });
@@ -6953,7 +7018,7 @@ function openObjectModal(o)
     });
     btns.push({
         label: '판매 +' + fmt(Math.floor(b.cost / 2)) + 'G', cls: 'red',
-        onClick: function () { sellObject(o); }
+        onClick: function () { confirmSell(o); }
     });
     btns.push({ label: '닫기', cls: 'gray' });
 
@@ -7045,7 +7110,17 @@ function updateHUD()
     $('hudFame').textContent = fmt(S.fame);
     $('hudVis').textContent = VISITORS.length + '명';
     var seasonIcon = SEASONS[seasonOf(S.month)].icon;
-    $('hudDate').textContent = S.opened ? (seasonIcon + ' ' + S.year + '년차 ' + S.month + '월 ' + S.day + '일') : '🔨 개장 준비중';
+    if (S.opened)
+    {
+        // time-of-day icon follows the ambient light cycle
+        var phase = (nightFactor() > 0.5) ? '🌙' : ((duskFactor() > 0.3) ? '🌆' : '☀️');
+        var pauseTag = (PAUSED || PANEL_OPEN) ? '⏸ ' : '';
+        $('hudDate').textContent = pauseTag + phase + seasonIcon + ' ' + S.year + '년차 ' + S.month + '월 ' + S.day + '일';
+    }
+    else
+    {
+        $('hudDate').textContent = '🔨 개장 준비중';
+    }
     $('hudLv').textContent = starStr(S.level);
     $('btnSpeed').textContent = '▶×' + S.speed;
     var ob = $('openBtn');
@@ -7444,12 +7519,128 @@ function renderGround()
     ctx.textAlign = 'left';
 }
 
+// highlight the exact effect area of the inspected / placed object:
+// green = decoration aura (2 tiles), blue = show stage reach, amber =
+// where decorations must sit to boost this exhibit
+function drawRangeOverlay()
+{
+    var x = 0;
+    var y = 0;
+    var w = 1;
+    var h = 1;
+    var kind = null;
+    if ((MODE.kind === 'place' || MODE.kind === 'move') && MODE.ghost)
+    {
+        var gb = BUILD[MODE.build];
+        x = MODE.ghost.tx;
+        y = MODE.ghost.ty;
+        w = ftW(MODE.build, MODE.rot);
+        h = ftH(MODE.build, MODE.rot);
+        if (gb.aura)
+        {
+            kind = 'aura';
+        }
+        else
+        {
+            if (gb.stage)
+            {
+                kind = 'stage';
+            }
+            else
+            {
+                if (gb.kind === 'tank')
+                {
+                    kind = 'tank';
+                }
+            }
+        }
+    }
+    else
+    {
+        if (INSPECT && S.objects.indexOf(INSPECT) >= 0)
+        {
+            var ib = BUILD[INSPECT.type];
+            x = INSPECT.x;
+            y = INSPECT.y;
+            w = oW(INSPECT);
+            h = oH(INSPECT);
+            if (ib.aura)
+            {
+                kind = 'aura';
+            }
+            else
+            {
+                if (ib.stage)
+                {
+                    kind = 'stage';
+                }
+                else
+                {
+                    if (ib.kind === 'tank')
+                    {
+                        kind = 'tank';
+                    }
+                }
+            }
+        }
+    }
+    if (!kind)
+    {
+        return;
+    }
+    var fill;
+    var stroke;
+    var px0;
+    var py0;
+    var pw;
+    var ph;
+    if (kind === 'stage')
+    {
+        // show reach: visitors within 4.5 tiles of the stage center
+        fill = 'rgba(80,160,255,0.16)';
+        stroke = 'rgba(60,130,230,0.75)';
+        px0 = ((x + w / 2) - 4.5) * TS;
+        py0 = ((y + h / 2) - 4.5) * TS;
+        pw = 9 * TS;
+        ph = 9 * TS;
+    }
+    else
+    {
+        // aura rule: objects whose top-left is within 2 tiles
+        fill = (kind === 'aura') ? 'rgba(80,200,120,0.20)' : 'rgba(255,190,60,0.16)';
+        stroke = (kind === 'aura') ? 'rgba(40,160,90,0.75)' : 'rgba(215,155,40,0.75)';
+        px0 = (x - 2) * TS;
+        py0 = (y - 2) * TS;
+        pw = 5 * TS;
+        ph = 5 * TS;
+    }
+    // clip to the usable map
+    var maxW = usableW() * TS;
+    var maxH = MAP_H * TS;
+    var cx0 = Math.max(0, px0);
+    var cy0 = Math.max(0, py0);
+    var cx1 = Math.min(maxW, px0 + pw);
+    var cy1 = Math.min(maxH, py0 + ph);
+    if (cx1 <= cx0 || cy1 <= cy0)
+    {
+        return;
+    }
+    ctx.fillStyle = fill;
+    ctx.fillRect(cx0, cy0, cx1 - cx0, cy1 - cy0);
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(cx0 + 1, cy0 + 1, cx1 - cx0 - 2, cy1 - cy0 - 2);
+    ctx.setLineDash([]);
+}
+
 function renderWorld()
 {
     drawWall();
     ctx.save();
     ctx.translate(0, WALL_H);
     renderGround();
+    drawRangeOverlay();
 
     // build sortable draw list
     var items = [];
@@ -7857,7 +8048,7 @@ function showLauncher()
     l.style.display = 'flex';
     document.getElementById('launcherTitle').textContent = OWNER_NAME + '의 스토리 박스';
     document.getElementById('launcherSub').textContent = '🎁 ' + OWNER_NAME + '! 하고 싶은 게임을 골라봐!';
-    document.getElementById('launcherFoot').textContent = OWNER_NAME + '를 위해 만든, 세상에 하나뿐인 게임 3종 세트 💝';
+    document.getElementById('launcherFoot').textContent = OWNER_NAME + '를 위해 만든, 세상에 하나뿐인 게임 3종 세트 💝 (v' + GAME_VER + ')';
     var wrap = document.getElementById('gameCards');
     wrap.innerHTML = '';
     for (var i = 0; i < THEME_ORDER.length; i++)
