@@ -782,7 +782,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '2.5';
+var GAME_VER = '3.0';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 26;        // decorative wall band height above the map (world px)
@@ -1615,23 +1615,25 @@ THEME_CAT.combos.push({ id: 'snownoble', name: '설원의 귀족', fame: 30, req
 THEME_MUSEUM.specials.push({ id: 'adventure', name: '대모험전', members: ['pirate', 'moonrock', 'mummy', 'sword'], need: 2, cost: 2200, desc: '모험가들의 꿈이 모인 전시' });
 
 // --- visual identity: walls, signs, floor styles ---
-THEME_AQUA.wall = { top: '#12344c', face: '#1f567c', trim: '#3a80ac' };
+// HD-2D style: deep, rich ground tones so lights and painted floors read
+// as pools of brightness instead of washing out
+THEME_AQUA.wall = { top: '#0a1e2e', face: '#143b56', trim: '#2d6b91' };
 THEME_AQUA.wallSign = OWNER_NAME + ' 아쿠아리움';
 THEME_AQUA.floorStyle = 'tile';
-THEME_AQUA.floorA = '#e9f0ee';
-THEME_AQUA.floorB = '#dfe9e6';
+THEME_AQUA.floorA = '#2f4a5c';
+THEME_AQUA.floorB = '#293f4f';
 
-THEME_MUSEUM.wall = { top: '#3c3122', face: '#5e4f3a', trim: '#84714f' };
+THEME_MUSEUM.wall = { top: '#241d14', face: '#413528', trim: '#6b5940' };
 THEME_MUSEUM.wallSign = OWNER_NAME + ' 박물관';
 THEME_MUSEUM.floorStyle = 'marble';
-THEME_MUSEUM.floorA = '#efe9db';
-THEME_MUSEUM.floorB = '#e7dfcd';
+THEME_MUSEUM.floorA = '#4e4535';
+THEME_MUSEUM.floorB = '#463d2e';
 
-THEME_CAT.wall = { top: '#4c3018', face: '#6e4a28', trim: '#93683c' };
+THEME_CAT.wall = { top: '#2e1c0e', face: '#4d3520', trim: '#7d5533' };
 THEME_CAT.wallSign = OWNER_NAME + ' 냥카페';
 THEME_CAT.floorStyle = 'wood';
-THEME_CAT.floorA = '#ecd7ae';
-THEME_CAT.floorB = '#e4cd9e';
+THEME_CAT.floorA = '#6b4a2c';
+THEME_CAT.floorB = '#5f4126';
 
 // --- seasonal visitor multipliers (each game has its own peak season) ---
 THEME_AQUA.seasonMult = { spring: 1.05, summer: 1.3, autumn: 1.0, winter: 0.85 };
@@ -3012,11 +3014,12 @@ function drawCatEnclosure(ctx, o, wx, wy, t)
 }
 
 // ---------- floor tiles ----------
+// tuned for the deep HD-2D ground: readable, but not blown out by bloom
 var FLOOR_COLORS = {
-    fpath:   { base: '#cfd8dc', line: '#a9b6bd', dot: '#eef3f5' },
-    fgarden: { base: '#bfe3b8', line: '#96c98d', dot: '#ff7ba8' },
-    fgold:   { base: '#f2dd9a', line: '#d8bc63', dot: '#fff3c4' },
-    fstudy:  { base: '#cfc4ec', line: '#a897d6', dot: '#efe8ff' }
+    fpath:   { base: '#93a5ae', line: '#6d808a', dot: '#c3d2d8' },
+    fgarden: { base: '#7cae76', line: '#5b8a57', dot: '#ff7ba8' },
+    fgold:   { base: '#d3ae55', line: '#a8853a', dot: '#ffe9a8' },
+    fstudy:  { base: '#9b8ecd', line: '#7568a8', dot: '#ded4ff' }
 };
 
 function drawFloorTile(ctx, id, wx, wy)
@@ -3631,8 +3634,7 @@ function drawObject(ctx, o, t)
         ctx.rotate(Math.PI / 2);
         var ox = -nw / 2;
         var oy = -nh / 2;
-        ctx.fillStyle = 'rgba(60,40,20,0.15)';
-        ctx.fillRect(ox + 2, oy + nh - 5, nw - 4, 4);
+        drawContactShadow(ctx, ox, oy, nw, nh);
         if (b.kind === 'tank')
         {
             drawTank(ctx, o, ox, oy, t);
@@ -3641,14 +3643,13 @@ function drawObject(ctx, o, t)
         {
             drawFacility(ctx, o, ox, oy, t);
         }
+        drawTopLight(ctx, ox, oy, nw, nh);
         ctx.restore();
         return;
     }
     var wx = o.x * TS;
     var wy = o.y * TS;
-    // ground shadow
-    ctx.fillStyle = 'rgba(60,40,20,0.15)';
-    ctx.fillRect(wx + 2, wy + b.h * TS - 5, b.w * TS - 4, 4);
+    drawContactShadow(ctx, wx, wy, b.w * TS, b.h * TS);
     if (b.kind === 'tank')
     {
         drawTank(ctx, o, wx, wy, t);
@@ -3657,6 +3658,43 @@ function drawObject(ctx, o, t)
     {
         drawFacility(ctx, o, wx, wy, t);
     }
+    drawTopLight(ctx, wx, wy, b.w * TS, b.h * TS);
+}
+
+// soft elliptical contact shadow: grounds the sprite like an HD-2D diorama
+function drawContactShadow(ctx, wx, wy, w, h)
+{
+    var cx = wx + w / 2;
+    var cy = wy + h - 3;
+    var rx = w * 0.46;
+    var ry = Math.max(3, h * 0.12);
+    var g = ctx.createRadialGradient(cx, cy, 1, cx, cy, Math.max(rx, ry));
+    g.addColorStop(0, 'rgba(40,28,16,0.34)');
+    g.addColorStop(0.6, 'rgba(40,28,16,0.16)');
+    g.addColorStop(1, 'rgba(40,28,16,0)');
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, ry / Math.max(rx, ry));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, Math.max(rx, ry), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+// gentle key light from above plus a shaded base, so flat sprites read
+// as solid objects under the post-processing pass
+function drawTopLight(ctx, wx, wy, w, h)
+{
+    var g = ctx.createLinearGradient(0, wy, 0, wy + h);
+    g.addColorStop(0, 'rgba(255,246,214,0.20)');
+    g.addColorStop(0.45, 'rgba(255,240,200,0.04)');
+    g.addColorStop(1, 'rgba(24,18,40,0.20)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.fillStyle = g;
+    ctx.fillRect(wx + 1, wy + 1, w - 2, h - 2);
+    ctx.restore();
 }
 
 // ---------- emotes ----------
@@ -3800,6 +3838,7 @@ function defaultState()
         speed: 1,
         muted: false,
         bgmOn: true,
+        hd: true,
         expansion: 0,
         objects: [],
         unlocked: [st],
@@ -3913,6 +3952,10 @@ function loadGame()
         if (d.bgmOn === undefined)
         {
             S.bgmOn = true;
+        }
+        if (d.hd === undefined)
+        {
+            S.hd = true;
         }
         if (!S.floorTiles)
         {
@@ -7931,6 +7974,18 @@ function openMenuPanel()
     });
     row.appendChild(bBgm);
 
+    var bHd = document.createElement('button');
+    bHd.className = 'btn';
+    bHd.textContent = S.hd ? '🎬 고급 그래픽 끄기' : '🎬 고급 그래픽 켜기';
+    bHd.addEventListener('click', function ()
+    {
+        S.hd = !S.hd;
+        bHd.textContent = S.hd ? '🎬 고급 그래픽 끄기' : '🎬 고급 그래픽 켜기';
+        sfx('click');
+        showToast(S.hd ? '고급 그래픽 ON (빛·아웃포커스 효과)' : '고급 그래픽 OFF (기기가 느릴 때)');
+    });
+    row.appendChild(bHd);
+
     var bTest = document.createElement('button');
     bTest.className = 'btn';
     bTest.textContent = '🔔 사운드 테스트';
@@ -8575,19 +8630,129 @@ function setPlaceBarText(armed)
 
 var cv = null;
 var ctx = null;
+var outCtx = null;        // the visible canvas
+var worldCv = null;       // offscreen buffer the world is rendered into
+var worldCtx = null;
+var fxCv = null;          // half-res buffer for bloom / depth-of-field
+var fxCtx = null;
+var maskCv = null;        // masked blur used for the tilt-shift bands
+var maskCtx = null;
 var lastT = 0;
 // always-running clock for UI pulses (ghost highlight etc.) even while
 // the sim itself is paused
 var UI_TIME = 0;
+var FX_SCALE = 0.5;       // post buffers run at half resolution
 
 function setupCanvas()
 {
     cv = document.getElementById('cv');
     cv.width = MAP_W * TS;
     cv.height = MAP_H * TS + WALL_H;
-    ctx = cv.getContext('2d');
+    outCtx = cv.getContext('2d');
+
+    // the world is drawn offscreen so post-processing can read it back
+    worldCv = document.createElement('canvas');
+    worldCv.width = cv.width;
+    worldCv.height = cv.height;
+    worldCtx = worldCv.getContext('2d');
+    ctx = worldCtx;
+
+    fxCv = document.createElement('canvas');
+    fxCv.width = Math.round(cv.width * FX_SCALE);
+    fxCv.height = Math.round(cv.height * FX_SCALE);
+    fxCtx = fxCv.getContext('2d');
+
+    maskCv = document.createElement('canvas');
+    maskCv.width = cv.width;
+    maskCv.height = cv.height;
+    maskCtx = maskCv.getContext('2d');
+
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
+}
+
+// ---------- HD-2D post processing ----------
+// bloom + tilt-shift depth of field + colour grade + vignette, applied to
+// the offscreen world buffer and composited onto the visible canvas
+function postProcess()
+{
+    var W = cv.width;
+    var H = cv.height;
+    var fw = fxCv.width;
+    var fh = fxCv.height;
+
+    if (!S || !S.hd)
+    {
+        outCtx.clearRect(0, 0, W, H);
+        outCtx.drawImage(worldCv, 0, 0);
+        return;
+    }
+
+    // base image, slightly richer so the lighting has something to bite on
+    outCtx.clearRect(0, 0, W, H);
+    outCtx.filter = 'saturate(1.14) contrast(1.07)';
+    outCtx.drawImage(worldCv, 0, 0);
+    outCtx.filter = 'none';
+
+    // --- bloom -------------------------------------------------------
+    // the art is bright pastel, so a plain brightness pass blooms
+    // everything. multiplying the image by itself squares the luminance,
+    // which crushes midtones and leaves only true highlights.
+    fxCtx.globalCompositeOperation = 'source-over';
+    fxCtx.clearRect(0, 0, fw, fh);
+    fxCtx.drawImage(worldCv, 0, 0, fw, fh);
+    fxCtx.globalCompositeOperation = 'multiply';
+    fxCtx.drawImage(worldCv, 0, 0, fw, fh);
+    fxCtx.drawImage(worldCv, 0, 0, fw, fh);
+    fxCtx.globalCompositeOperation = 'source-over';
+    outCtx.save();
+    outCtx.globalCompositeOperation = 'lighter';
+    outCtx.globalAlpha = 0.26;
+    outCtx.filter = 'blur(3px)';
+    outCtx.drawImage(fxCv, 0, 0, W, H);
+    outCtx.filter = 'none';
+    outCtx.restore();
+
+    // --- tilt shift: a narrow blurred band top and bottom -------------
+    fxCtx.clearRect(0, 0, fw, fh);
+    fxCtx.filter = 'blur(1.4px)';
+    fxCtx.drawImage(worldCv, 0, 0, fw, fh);
+    fxCtx.filter = 'none';
+    maskCtx.clearRect(0, 0, W, H);
+    maskCtx.drawImage(fxCv, 0, 0, W, H);
+    maskCtx.save();
+    maskCtx.globalCompositeOperation = 'destination-in';
+    var dof = maskCtx.createLinearGradient(0, 0, 0, H);
+    dof.addColorStop(0, 'rgba(0,0,0,1)');
+    dof.addColorStop(0.13, 'rgba(0,0,0,0.35)');
+    dof.addColorStop(0.24, 'rgba(0,0,0,0)');
+    dof.addColorStop(0.80, 'rgba(0,0,0,0)');
+    dof.addColorStop(0.92, 'rgba(0,0,0,0.4)');
+    dof.addColorStop(1, 'rgba(0,0,0,0.95)');
+    maskCtx.fillStyle = dof;
+    maskCtx.fillRect(0, 0, W, H);
+    maskCtx.restore();
+    outCtx.drawImage(maskCv, 0, 0);
+
+    // --- colour grade: cool top, warm floor, kept subtle --------------
+    outCtx.save();
+    outCtx.globalCompositeOperation = 'soft-light';
+    var grade = outCtx.createLinearGradient(0, 0, 0, H);
+    grade.addColorStop(0, 'rgba(70,105,180,0.30)');
+    grade.addColorStop(0.55, 'rgba(255,236,200,0.10)');
+    grade.addColorStop(1, 'rgba(255,186,120,0.22)');
+    outCtx.fillStyle = grade;
+    outCtx.fillRect(0, 0, W, H);
+    outCtx.restore();
+
+    // --- vignette ---
+    outCtx.save();
+    var vg = outCtx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.34, W / 2, H / 2, Math.max(W, H) * 0.74);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(10,12,30,0.30)');
+    outCtx.fillStyle = vg;
+    outCtx.fillRect(0, 0, W, H);
+    outCtx.restore();
 }
 
 function resizeCanvas()
@@ -8687,7 +8852,7 @@ function renderGround()
     if (style === 'wood')
     {
         // plank seams: horizontal joints, staggered vertical cuts, knots
-        ctx.fillStyle = 'rgba(130,90,45,0.30)';
+        ctx.fillStyle = 'rgba(20,10,4,0.42)';
         for (y = 1; y <= MAP_H; y++)
         {
             ctx.fillRect(0, y * TS - 1, uw * TS, 1);
@@ -8708,7 +8873,7 @@ function renderGround()
     else
     {
         // grout lines
-        ctx.fillStyle = (style === 'marble') ? 'rgba(140,125,95,0.22)' : 'rgba(120,150,145,0.22)';
+        ctx.fillStyle = (style === 'marble') ? 'rgba(18,13,6,0.35)' : 'rgba(6,14,20,0.38)';
         for (x = 1; x <= uw; x++)
         {
             ctx.fillRect(x * TS, 0, 1, MAP_H * TS);
@@ -8726,13 +8891,13 @@ function renderGround()
                 {
                     if (style === 'tile')
                     {
-                        ctx.fillStyle = 'rgba(90,170,190,0.35)';
+                        ctx.fillStyle = 'rgba(150,220,240,0.22)';
                         ctx.fillRect(x * TS + 8, y * TS + 14, 8, 2);
                         ctx.fillRect(x * TS + 18, y * TS + 18, 8, 2);
                     }
                     else
                     {
-                        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                        ctx.fillStyle = 'rgba(255,240,205,0.20)';
                         ctx.fillRect(x * TS + 6, y * TS + 20, 12, 2);
                         ctx.fillRect(x * TS + 14, y * TS + 10, 10, 2);
                     }
@@ -8760,7 +8925,7 @@ function renderGround()
         {
             for (x = uw; x < MAP_W; x++)
             {
-                ctx.fillStyle = ((x + y) % 2 === 0) ? '#dcc9a0' : '#d5c194';
+                ctx.fillStyle = ((x + y) % 2 === 0) ? '#5c4f3a' : '#544733';
                 ctx.fillRect(x * TS, y * TS, TS, TS);
             }
         }
@@ -8803,12 +8968,12 @@ function renderGround()
         var sby = MAP_H * TS / 2;
         ctx.fillStyle = '#8a6838';
         ctx.fillRect(sbx - 2, sby - 4, 4, 26);
-        ctx.fillStyle = '#f5ead0';
+        ctx.fillStyle = '#e8dcc0';
         ctx.fillRect(sbx - 42, sby - 22, 84, 20);
-        ctx.strokeStyle = '#7a5a30';
+        ctx.strokeStyle = '#4a3620';
         ctx.lineWidth = 2;
         ctx.strokeRect(sbx - 42, sby - 22, 84, 20);
-        ctx.fillStyle = '#7a5a30';
+        ctx.fillStyle = '#4a3620';
         ctx.font = 'bold 10px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('확장 예정지', sbx, sby - 8);
@@ -9077,6 +9242,11 @@ function renderWorld()
     ctx.textAlign = 'left';
 
     drawAmbientLight();
+    if (S.hd)
+    {
+        drawPointLights();
+        drawMotes();
+    }
     ctx.restore();
 
     // event banners on the wall band, stacked so they never overlap
@@ -9107,6 +9277,115 @@ function drawBanner(text, y, bg)
     ctx.textAlign = 'center';
     ctx.fillText(text, cv.width / 2, y + 13);
     ctx.textAlign = 'left';
+}
+
+// ---------- atmosphere: floating dust motes ----------
+var MOTES = [];
+
+function initMotes()
+{
+    MOTES = [];
+    for (var i = 0; i < 34; i++)
+    {
+        MOTES.push({
+            x: Math.random() * MAP_W * TS,
+            y: Math.random() * MAP_H * TS,
+            r: 0.8 + Math.random() * 1.6,
+            sp: 3 + Math.random() * 9,
+            drift: 0.4 + Math.random() * 1.2,
+            ph: Math.random() * Math.PI * 2,
+            a: 0.18 + Math.random() * 0.35
+        });
+    }
+}
+
+function updateMotes(dt)
+{
+    if (MOTES.length === 0)
+    {
+        initMotes();
+    }
+    var h = MAP_H * TS;
+    for (var i = 0; i < MOTES.length; i++)
+    {
+        var m = MOTES[i];
+        m.y -= m.sp * dt;
+        m.ph += dt * m.drift;
+        if (m.y < -6)
+        {
+            m.y = h + 6;
+            m.x = Math.random() * usableW() * TS;
+        }
+    }
+}
+
+function drawMotes()
+{
+    var uw = usableW() * TS;
+    for (var i = 0; i < MOTES.length; i++)
+    {
+        var m = MOTES[i];
+        var x = m.x + Math.sin(m.ph) * 6;
+        if (x < 0 || x > uw)
+        {
+            continue;
+        }
+        ctx.globalAlpha = m.a * (0.55 + 0.45 * Math.sin(m.ph * 1.7));
+        ctx.fillStyle = '#fff6d8';
+        ctx.beginPath();
+        ctx.arc(x, m.y, m.r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+}
+
+// ---------- warm point lights (HD-2D diorama lighting) ----------
+// facilities that would realistically glow cast a soft pool on the floor
+var LIGHT_TYPES = {
+    snack: 1, ice: 1, cafe: 1, gift: 1, vend: 0.8, photo: 0.9, game: 1.2,
+    stage: 1.1, foodcart: 1, special1: 1.1, special2: 1.3, special3: 1.2, special4: 1.3
+};
+
+function drawPointLights()
+{
+    var night = S.opened ? nightFactor() : 0;
+    var dusk = S.opened ? duskFactor() : 0;
+    // lights read strongest at night, but a soft pool is always present
+    var strength = 0.16 + night * 0.55 + dusk * 0.2;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < S.objects.length; i++)
+    {
+        var o = S.objects[i];
+        var lt = LIGHT_TYPES[o.type];
+        if (!lt)
+        {
+            continue;
+        }
+        var b = BUILD[o.type];
+        var cx = (o.x + oW(o) / 2) * TS;
+        var cy = (o.y + oH(o) / 2) * TS;
+        var rad = (26 + Math.max(b.w, b.h) * 16) * lt;
+        var flick = 1 + Math.sin(GAME_TIME * 3 + o.id) * 0.04;
+        var g = ctx.createRadialGradient(cx, cy, 2, cx, cy, rad * flick);
+        var a = (0.34 * strength * lt).toFixed(3);
+        g.addColorStop(0, 'rgba(255,214,140,' + a + ')');
+        g.addColorStop(0.55, 'rgba(255,180,90,' + (a * 0.4).toFixed(3) + ')');
+        g.addColorStop(1, 'rgba(255,160,60,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+    }
+    // entrance lantern
+    var ex = (ENTRANCE.x + 0.5) * TS;
+    var ey = ENTRANCE.y * TS;
+    var er = 74;
+    var eg = ctx.createRadialGradient(ex, ey, 3, ex, ey, er);
+    var ea = (0.3 * strength).toFixed(3);
+    eg.addColorStop(0, 'rgba(255,226,160,' + ea + ')');
+    eg.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.fillStyle = eg;
+    ctx.fillRect(ex - er, ey - er, er * 2, er * 2);
+    ctx.restore();
 }
 
 // day -> dusk -> night -> dawn ambience on a slow real-time loop (60s)
@@ -9513,7 +9792,9 @@ function frame(t)
             // keep cosmetic particles (dust, floats) animating while paused
             updateFx(dt / 1000);
         }
+        updateMotes(dt / 1000);
         renderWorld();
+        postProcess();
         updateHUD();
     }
     requestAnimationFrame(frame);
