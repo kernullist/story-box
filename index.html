@@ -782,7 +782,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '3.0';
+var GAME_VER = '3.1';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 26;        // decorative wall band height above the map (world px)
@@ -8674,6 +8674,21 @@ function setupCanvas()
 // ---------- HD-2D post processing ----------
 // bloom + tilt-shift depth of field + colour grade + vignette, applied to
 // the offscreen world buffer and composited onto the visible canvas
+// older iOS Safari has no canvas 2d filter support; without it a blur is
+// a no-op and the additive passes would just wash the picture out
+var CANVAS_FILTER_OK = null;
+
+function canvasFilterSupported()
+{
+    if (CANVAS_FILTER_OK === null)
+    {
+        var t = document.createElement('canvas').getContext('2d');
+        t.filter = 'blur(2px)';
+        CANVAS_FILTER_OK = (t.filter === 'blur(2px)');
+    }
+    return CANVAS_FILTER_OK;
+}
+
 function postProcess()
 {
     var W = cv.width;
@@ -8685,6 +8700,30 @@ function postProcess()
     {
         outCtx.clearRect(0, 0, W, H);
         outCtx.drawImage(worldCv, 0, 0);
+        return;
+    }
+
+    if (!canvasFilterSupported())
+    {
+        // graded base + vignette only: safe everywhere, still cinematic
+        outCtx.clearRect(0, 0, W, H);
+        outCtx.drawImage(worldCv, 0, 0);
+        outCtx.save();
+        outCtx.globalCompositeOperation = 'soft-light';
+        var g2 = outCtx.createLinearGradient(0, 0, 0, H);
+        g2.addColorStop(0, 'rgba(70,105,180,0.30)');
+        g2.addColorStop(0.55, 'rgba(255,236,200,0.10)');
+        g2.addColorStop(1, 'rgba(255,186,120,0.22)');
+        outCtx.fillStyle = g2;
+        outCtx.fillRect(0, 0, W, H);
+        outCtx.restore();
+        outCtx.save();
+        var vg2 = outCtx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.34, W / 2, H / 2, Math.max(W, H) * 0.74);
+        vg2.addColorStop(0, 'rgba(0,0,0,0)');
+        vg2.addColorStop(1, 'rgba(10,12,30,0.30)');
+        outCtx.fillStyle = vg2;
+        outCtx.fillRect(0, 0, W, H);
+        outCtx.restore();
         return;
     }
 
@@ -8825,6 +8864,16 @@ function drawWall()
     ctx.fillText(THEME.wallSign, sx + 1, sy + 1);
     ctx.fillStyle = '#ffe9b0';
     ctx.fillText(THEME.wallSign, sx, sy);
+    // build stamp: lets us tell a stale cached client apart at a glance
+    var stamp = 'v' + GAME_VER + (S && S.hd ? ' HD' : '');
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'right';
+    var sw = ctx.measureText(stamp).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    roundRect(ctx, cv.width - sw - 14, 4, sw + 10, 16, 5);
+    ctx.fill();
+    ctx.fillStyle = '#ffe9b0';
+    ctx.fillText(stamp, cv.width - 9, 16);
     ctx.textAlign = 'left';
 }
 
