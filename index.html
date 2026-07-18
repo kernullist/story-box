@@ -782,7 +782,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '2.4';
+var GAME_VER = '2.5';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 26;        // decorative wall band height above the map (world px)
@@ -5628,37 +5628,114 @@ function jobName(id)
 }
 
 // build one repeatable request appropriate to the current game state
+// best exhibit class the player already owns
+function ownedMaxCls()
+{
+    var m = 0;
+    for (var i = 0; i < S.objects.length; i++)
+    {
+        var b = BUILD[S.objects[i].type];
+        if (b.kind === 'tank' && b.cls > m)
+        {
+            m = b.cls;
+        }
+    }
+    return m;
+}
+
+// best exhibit class the player could realistically get right now
+function reachableMaxCls()
+{
+    var m = ownedMaxCls();
+    for (var k in BUILD)
+    {
+        var b = BUILD[k];
+        if (b.kind === 'tank' && b.lvReq <= S.level && b.cost <= S.money * 1.4 + 400 && b.cls > m)
+        {
+            m = b.cls;
+        }
+    }
+    return m;
+}
+
 function genRequest()
 {
     var posters = VTYPES.filter(function (t) { return S.fame >= (t.unlockFame || 0) && !t.rare; });
     var poster = posters[Math.floor(Math.random() * posters.length)].id;
     var kinds = [];
-    // display a species we could research soon but have not shown yet
+    var cls = reachableMaxCls();
+    var budget = S.money * 1.4 + 400;
+
+    // only ask for exhibits the player can actually house and obtain:
+    // already researched first, otherwise something nearly affordable
     var wishes = SPECIES_ORDER.filter(function (id)
     {
         var sp = SPECIES[id];
-        return sp.lvReq <= S.level && !qDisplayed(S, id);
+        return sp.lvReq <= S.level && sp.cls <= cls && sp.stock <= budget &&
+            !qDisplayed(S, id) && S.unlocked.indexOf(id) >= 0;
     });
+    if (wishes.length === 0)
+    {
+        wishes = SPECIES_ORDER.filter(function (id)
+        {
+            var sp = SPECIES[id];
+            return sp.lvReq <= S.level && sp.cls <= cls && sp.stock <= budget &&
+                !qDisplayed(S, id) && sp.rpCost <= S.rp + 25;
+        });
+    }
     if (wishes.length > 0)
     {
         kinds.push('display');
     }
-    var facWish = ['snack', 'ice', 'photo', 'garden', 'foodcart', 'game'].filter(function (t)
+
+    // only ask for buildings that are unlocked, not reward-locked and affordable
+    var facWish = ['snack', 'ice', 'photo', 'garden', 'foodcart', 'game', 'vend', 'bench', 'sign', 'flower', 'toilet'].filter(function (t)
     {
-        return BUILD[t].lvReq <= S.level && !hasType(S, t);
+        var b = BUILD[t];
+        return b && !b.reqLock && b.lvReq <= S.level && b.cost <= budget && !hasType(S, t);
     });
     if (facWish.length > 0)
     {
         kinds.push('fac');
     }
+
     kinds.push('visitors');
-    if (S.combosDone.length < COMBOS.length)
+    if (S.combosDone.length < COMBOS.length && S.objects.length >= 3)
     {
         kinds.push('combo');
     }
-    kinds.push('lvup');
+
+    // upgrade requests must push past the current best level, and only if
+    // some exhibit sitting at that level can actually be paid for
+    var maxLv = 1;
+    for (var mk in S.spLv)
+    {
+        if (S.spLv[mk] > maxLv)
+        {
+            maxLv = S.spLv[mk];
+        }
+    }
+    var upTarget = Math.min(5, maxLv + 1);
+    var upWish = [];
+    if (maxLv < 5)
+    {
+        for (var u = 0; u < S.unlocked.length; u++)
+        {
+            var uid = S.unlocked[u];
+            if ((S.spLv[uid] || 1) === maxLv && spLvUpCost(uid) <= S.rp * 1.5 + 20)
+            {
+                upWish.push(uid);
+            }
+        }
+    }
+    if (upWish.length > 0)
+    {
+        kinds.push('lvup');
+    }
+
     var kind = kinds[Math.floor(Math.random() * kinds.length)];
-    var r = { id: S.reqSeq++, kind: kind, poster: poster };
+    // regular requests time out so an ignored one never blocks the board
+    var r = { id: S.reqSeq++, kind: kind, poster: poster, days: 26 + Math.floor(Math.random() * 14) };
     if (kind === 'display')
     {
         var w = wishes[Math.floor(Math.random() * wishes.length)];
@@ -5689,15 +5766,7 @@ function genRequest()
     }
     if (kind === 'lvup')
     {
-        var maxLv = 1;
-        for (var k in S.spLv)
-        {
-            if (S.spLv[k] > maxLv)
-            {
-                maxLv = S.spLv[k];
-            }
-        }
-        r.target = Math.min(5, maxLv + 1);
+        r.target = upTarget;
         r.desc = '더 대단한 전시가 보고 싶어요! 아무 전시물이나 Lv' + r.target + '로 강화해요!';
         r.reward = { g: 1200 + r.target * 600 };
     }
@@ -5820,6 +5889,21 @@ function tickRequests()
             return; // one celebration per day
         }
     }
+    // age out regular requests (special ones wait forever)
+    for (var e = S.requests.length - 1; e >= 0; e--)
+    {
+        var rq = S.requests[e];
+        if (rq.special || rq.days === undefined)
+        {
+            continue;
+        }
+        rq.days--;
+        if (rq.days <= 0)
+        {
+            S.requests.splice(e, 1);
+            showToast('📋 「' + jobName(rq.poster) + '」의 의뢰가 기한이 지나 사라졌어요');
+        }
+    }
     // one-time special requests appear when famous enough
     var specials = THEME.specialRequests || [];
     for (var s = 0; s < specials.length; s++)
@@ -5839,7 +5923,17 @@ function tickRequests()
             return;
         }
     }
-    if (S.requests.length >= 3)
+    // the three-slot cap applies to regular requests only: long-running
+    // special requests must not stop new ones from arriving
+    var generics = 0;
+    for (var q = 0; q < S.requests.length; q++)
+    {
+        if (!S.requests[q].special)
+        {
+            generics++;
+        }
+    }
+    if (generics >= 3)
     {
         return;
     }
@@ -7611,8 +7705,10 @@ function openRequestPanel()
             }
             rewardTxt.push('💗 인기 +5');
             var prog = requestProgress(r);
+            var deadline = r.special ? '<span class="small"> · 기한 없음</span>'
+                : (r.days !== undefined ? '<span class="small"> · 남은 기한 ' + r.days + '일</span>' : '');
             card.innerHTML = '<div class="mid">' +
-                '<div class="nm">' + (r.special ? '⭐ ' : '') + '「' + jobName(r.poster) + '」의 의뢰</div>' +
+                '<div class="nm">' + (r.special ? '⭐ ' : '') + '「' + jobName(r.poster) + '」의 의뢰' + deadline + '</div>' +
                 '<div class="sub">' + r.desc + (prog ? ' <b>(' + prog + ')</b>' : '') + '</div>' +
                 '<div class="sub">보상: ' + rewardTxt.join(' · ') + '</div></div>';
             sh.body.appendChild(card);
