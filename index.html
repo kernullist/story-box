@@ -782,7 +782,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '3.1';
+var GAME_VER = '3.2';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 26;        // decorative wall band height above the map (world px)
@@ -8865,7 +8865,7 @@ function drawWall()
     ctx.fillStyle = '#ffe9b0';
     ctx.fillText(THEME.wallSign, sx, sy);
     // build stamp: lets us tell a stale cached client apart at a glance
-    var stamp = 'v' + GAME_VER + (S && S.hd ? ' HD' : '');
+    var stamp = 'v' + GAME_VER + ' · HD ' + ((S && S.hd) ? 'ON' : 'OFF');
     ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'right';
     var sw = ctx.measureText(stamp).width;
@@ -9727,7 +9727,7 @@ function showLauncher()
     l.style.display = 'flex';
     document.getElementById('launcherTitle').textContent = OWNER_NAME + '의 스토리 박스';
     document.getElementById('launcherSub').textContent = '🎁 ' + OWNER_NAME + '! 하고 싶은 게임을 골라봐!';
-    document.getElementById('launcherFoot').textContent = OWNER_NAME + '를 위해 만든, 세상에 하나뿐인 게임 3종 세트 💝 (v' + GAME_VER + ')';
+    document.getElementById('launcherFoot').textContent = OWNER_NAME + '를 위해 만든, 세상에 하나뿐인 게임 3종 세트 💝 (v' + GAME_VER + ' · 화면 안에서 HD 상태 확인)';
     var wrap = document.getElementById('gameCards');
     wrap.innerHTML = '';
     for (var i = 0; i < THEME_ORDER.length; i++)
