@@ -782,10 +782,10 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '3.3';
+var GAME_VER = '3.4';
 
 var TS = 32;            // tile size in world px
-var WALL_H = 26;        // decorative wall band height above the map (world px)
+var WALL_H = 58;        // back wall height above the map (world px)
 var MAP_W = 20;         // full map width in tiles
 var MAP_H = 13;         // full map height in tiles
 var EXP_W = [12, 16, 20];   // usable width per expansion stage
@@ -3615,26 +3615,116 @@ function drawFacility(ctx, o, wx, wy, t)
     ctx.textAlign = 'left';
 }
 
+// ---------- diorama elevation (HD-2D) ----------
+// HD-2D reads as a diorama because the camera looks INTO the scene: things
+// stand upright off the ground instead of lying flat. Every object is
+// lifted by its own height and an extruded side connects it to the floor.
+var ELEVATION = {
+    bench: 8, flower: 9, sign: 16, vend: 20, toilet: 22,
+    snack: 22, ice: 22, cafe: 24, gift: 24, photo: 20,
+    foodcart: 20, garden: 8, fountain: 26, game: 22, stage: 14,
+    small: 16, touch: 10, mid: 20, large: 26, tunnel: 22, dome: 34,
+    special1: 30, special2: 32, special3: 26, special4: 46
+};
+
+function objElevation(o)
+{
+    var e = ELEVATION[o.type];
+    if (e === undefined)
+    {
+        e = (BUILD[o.type].kind === 'tank') ? 18 : 20;
+    }
+    return e;
+}
+
+// side colour of the extruded body, keyed loosely to each build's material
+var SIDE_COLORS = {
+    small: '#20323e', touch: '#7a5a2c', mid: '#20323e', large: '#20323e',
+    tunnel: '#20323e', dome: '#20323e',
+    bench: '#4a2f16', flower: '#4a3a1c', sign: '#4a3218', vend: '#6a1414',
+    toilet: '#24506e', snack: '#6a2a1c', ice: '#2a6a86', cafe: '#4a3420',
+    gift: '#6a2a48', photo: '#3a2a60', foodcart: '#6a2a20', garden: '#2a5a20',
+    fountain: '#4a5058', game: '#1e1a2c', stage: '#1c3a4c',
+    special1: '#4a2a18', special2: '#3a3a44', special3: '#4a3420', special4: '#3a3a48'
+};
+
+function sideColor(o)
+{
+    var c = SIDE_COLORS[o.type];
+    if (!c)
+    {
+        c = (BUILD[o.type].kind === 'tank') ? '#20323e' : '#3a2a1c';
+    }
+    return c;
+}
+
+// long shadow cast across the floor, away from the key light
+function drawCastShadow(ctx, wx, wy, w, h, elev)
+{
+    var baseY = wy + h - 2;
+    var lean = Math.min(18, elev * 0.55);
+    ctx.save();
+    ctx.fillStyle = 'rgba(12,10,24,0.34)';
+    ctx.beginPath();
+    ctx.moveTo(wx + 2, baseY);
+    ctx.lineTo(wx + w - 2, baseY);
+    ctx.lineTo(wx + w - 2 + lean, baseY + lean * 0.55);
+    ctx.lineTo(wx + 2 + lean, baseY + lean * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
 function drawObject(ctx, o, t)
 {
     var b = BUILD[o.type];
     var rotated = o.rot && b.w !== b.h;
+    var elev = objElevation(o);
+    var fw = oW(o) * TS;
+    var fh = oH(o) * TS;
+    var fx = o.x * TS;
+    var fy = o.y * TS;
+
+    // floor contact + cast shadow stay on the ground plane
+    drawCastShadow(ctx, fx, fy, fw, fh, elev);
+    drawContactShadow(ctx, fx, fy, fw, fh);
+
+    // extruded side: from the raised sprite's bottom down to the footprint
+    var sideTop = fy + fh - elev;
+    ctx.save();
+    var sc = sideColor(o);
+    ctx.fillStyle = sc;
+    ctx.fillRect(fx + 2, sideTop, fw - 4, elev);
+    // vertical falloff: the body darkens toward the floor
+    var sg = ctx.createLinearGradient(0, sideTop, 0, fy + fh);
+    sg.addColorStop(0, 'rgba(255,240,210,0.18)');
+    sg.addColorStop(0.35, 'rgba(0,0,0,0)');
+    sg.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = sg;
+    ctx.fillRect(fx + 2, sideTop, fw - 4, elev);
+    // lit left edge and shaded right edge give the block volume
+    ctx.fillStyle = 'rgba(255,236,200,0.20)';
+    ctx.fillRect(fx + 2, sideTop, 2, elev);
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    ctx.fillRect(fx + fw - 4, sideTop, 2, elev);
+    // dark seam where the body meets the floor
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(fx + 2, fy + fh - 3, fw - 4, 3);
+    ctx.restore();
+
+    // the sprite itself is drawn raised so its base sits on the footprint
+    ctx.save();
+    ctx.translate(0, -elev);
     if (rotated)
     {
-        // rotate the canvas 90 degrees around the rotated footprint center
-        // and draw the native sprite centered; keeps all sprite code intact
         var nw = b.w * TS;
         var nh = b.h * TS;
-        var rw = b.h * TS;
-        var rh = b.w * TS;
-        var cx = o.x * TS + rw / 2;
-        var cy = o.y * TS + rh / 2;
-        ctx.save();
+        var cx = fx + fw / 2;
+        var cy = fy + fh / 2;
         ctx.translate(cx, cy);
         ctx.rotate(Math.PI / 2);
         var ox = -nw / 2;
         var oy = -nh / 2;
-        drawContactShadow(ctx, ox, oy, nw, nh);
         if (b.kind === 'tank')
         {
             drawTank(ctx, o, ox, oy, t);
@@ -3644,21 +3734,20 @@ function drawObject(ctx, o, t)
             drawFacility(ctx, o, ox, oy, t);
         }
         drawTopLight(ctx, ox, oy, nw, nh);
-        ctx.restore();
-        return;
-    }
-    var wx = o.x * TS;
-    var wy = o.y * TS;
-    drawContactShadow(ctx, wx, wy, b.w * TS, b.h * TS);
-    if (b.kind === 'tank')
-    {
-        drawTank(ctx, o, wx, wy, t);
     }
     else
     {
-        drawFacility(ctx, o, wx, wy, t);
+        if (b.kind === 'tank')
+        {
+            drawTank(ctx, o, fx, fy, t);
+        }
+        else
+        {
+            drawFacility(ctx, o, fx, fy, t);
+        }
+        drawTopLight(ctx, fx, fy, fw, fh);
     }
-    drawTopLight(ctx, wx, wy, b.w * TS, b.h * TS);
+    ctx.restore();
 }
 
 // soft elliptical contact shadow: grounds the sprite like an HD-2D diorama
@@ -8917,49 +9006,106 @@ function canvasTileFromEvent(e)
 function drawWall()
 {
     var w = THEME.wall;
-    ctx.fillStyle = w.top;
-    ctx.fillRect(0, 0, cv.width, 7);
-    ctx.fillStyle = w.face;
-    ctx.fillRect(0, 7, cv.width, WALL_H - 10);
-    ctx.fillStyle = w.trim;
-    ctx.fillRect(0, WALL_H - 3, cv.width, 3);
-    // theme pattern on the wall face
+    var W = cv.width;
+    // upper wall in shadow, lower wall catching bounced light from the floor
+    var wg = ctx.createLinearGradient(0, 0, 0, WALL_H);
+    wg.addColorStop(0, w.top);
+    wg.addColorStop(0.55, w.face);
+    wg.addColorStop(1, w.trim);
+    ctx.fillStyle = wg;
+    ctx.fillRect(0, 0, W, WALL_H);
+    // ceiling shadow line
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, W, 5);
+
+    // structural pillars give the wall real depth
+    var bay = 96;
+    for (var px = 0; px < W + bay; px += bay)
+    {
+        ctx.fillStyle = 'rgba(255,240,205,0.07)';
+        ctx.fillRect(px, 5, 16, WALL_H - 16);
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillRect(px + 16, 5, 5, WALL_H - 16);
+    }
+
+    // per-theme wall dressing
     if (THEME.floorStyle === 'tile')
     {
-        ctx.fillStyle = 'rgba(255,255,255,0.18)';
-        for (var b = 0; b < 9; b++)
+        // backlit portholes
+        for (var b = 0; b < Math.ceil(W / bay); b++)
         {
-            var bx = (b * 73 + 20) % cv.width;
-            var by = 11 + (b * 5) % 9;
+            var cxp = b * bay + 52;
+            var cyp = WALL_H * 0.44;
+            var pg = ctx.createRadialGradient(cxp, cyp, 2, cxp, cyp, 17);
+            pg.addColorStop(0, 'rgba(150,225,255,0.55)');
+            pg.addColorStop(1, 'rgba(90,180,230,0)');
+            ctx.fillStyle = pg;
+            ctx.fillRect(cxp - 18, cyp - 18, 36, 36);
+            ctx.strokeStyle = 'rgba(200,240,255,0.35)';
+            ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(bx, by, 2, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.arc(cxp, cyp, 11, 0, Math.PI * 2);
+            ctx.stroke();
         }
     }
     if (THEME.floorStyle === 'wood')
     {
-        ctx.fillStyle = 'rgba(255,220,170,0.35)';
-        for (var p = 0; p < 7; p++)
+        // warm wall lamps
+        for (var p = 0; p < Math.ceil(W / bay); p++)
         {
-            var pxw = 30 + p * 96;
-            ctx.fillRect(pxw, 13, 3, 3);
-            ctx.fillRect(pxw + 5, 10, 3, 3);
-            ctx.fillRect(pxw + 10, 13, 3, 3);
+            var lx = p * bay + 54;
+            var ly = WALL_H * 0.40;
+            var lg = ctx.createRadialGradient(lx, ly, 2, lx, ly, 22);
+            lg.addColorStop(0, 'rgba(255,214,140,0.6)');
+            lg.addColorStop(1, 'rgba(255,180,90,0)');
+            ctx.fillStyle = lg;
+            ctx.fillRect(lx - 24, ly - 24, 48, 48);
+            ctx.fillStyle = '#ffe6b0';
+            ctx.fillRect(lx - 4, ly - 5, 8, 9);
         }
     }
     if (THEME.floorStyle === 'marble')
     {
-        ctx.fillStyle = 'rgba(255,240,200,0.25)';
-        for (var m = 0; m < 6; m++)
+        // framed exhibits hung on the wall
+        for (var m = 0; m < Math.ceil(W / bay); m++)
         {
-            ctx.fillRect(40 + m * 110, 9, 2, WALL_H - 14);
+            var mx = m * bay + 44;
+            var my = WALL_H * 0.28;
+            ctx.fillStyle = 'rgba(232,196,120,0.55)';
+            ctx.fillRect(mx, my, 30, 22);
+            ctx.fillStyle = 'rgba(40,32,22,0.75)';
+            ctx.fillRect(mx + 3, my + 3, 24, 16);
+            ctx.fillStyle = 'rgba(255,225,160,0.30)';
+            ctx.fillRect(mx + 6, my + 6, 18, 4);
         }
     }
+
+    // baseboard where the wall meets the floor
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, WALL_H - 9, W, 5);
+    ctx.fillStyle = w.trim;
+    ctx.fillRect(0, WALL_H - 4, W, 4);
+    // floor bounce light along the base
+    var bg = ctx.createLinearGradient(0, WALL_H - 22, 0, WALL_H);
+    bg.addColorStop(0, 'rgba(255,210,150,0)');
+    bg.addColorStop(1, 'rgba(255,210,150,0.14)');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, WALL_H - 22, W, 22);
+
     // venue sign with the owner's name
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'center';
     var sx = cv.width / 2;
-    var sy = WALL_H - 9;
+    var sy = WALL_H * 0.5 + 5;
+    // sign board behind the text
+    var sww = ctx.measureText(THEME.wallSign).width + 30;
+    ctx.fillStyle = 'rgba(0,0,0,0.42)';
+    roundRect(ctx, sx - sww / 2, sy - 17, sww, 24, 7);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,225,160,0.35)';
+    ctx.lineWidth = 2;
+    roundRect(ctx, sx - sww / 2, sy - 17, sww, 24, 7);
+    ctx.stroke();
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillText(THEME.wallSign, sx + 1, sy + 1);
     ctx.fillStyle = '#ffe9b0';
@@ -9261,8 +9407,9 @@ function renderWorld()
     for (var i = 0; i < S.objects.length; i++)
     {
         var o = S.objects[i];
-        var b = BUILD[o.type];
-        items.push({ sy: (o.y + b.h) * TS, obj: o });
+        // sort on the ground contact edge so taller bodies correctly
+        // overlap whatever stands behind them (rotation-aware)
+        items.push({ sy: (o.y + oH(o)) * TS, obj: o });
     }
     for (var v = 0; v < VISITORS.length; v++)
     {
