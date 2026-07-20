@@ -782,7 +782,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '3.4';
+var GAME_VER = '3.5';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 58;        // back wall height above the map (world px)
@@ -4129,22 +4129,12 @@ function floorAt(x, y)
     return id ? FLOORS[id] : null;
 }
 
-// a floor tile can be painted on any in-bounds walkable tile
+// the floor is a layer underneath everything, so any tile inside the
+// venue can be painted - including under buildings. that way a room can
+// be floored once and buildings rearranged on top without leaving holes.
 function canPaintFloor(x, y)
 {
-    if (x < 0 || y < 0 || x >= usableW() || y >= MAP_H)
-    {
-        return false;
-    }
-    if (objectAt(x, y))
-    {
-        return false;
-    }
-    if (x === ENTRANCE.x && (y === ENTRANCE.y || y === ENTRANCE.y - 1))
-    {
-        return false;
-    }
-    return true;
+    return x >= 0 && y >= 0 && x < usableW() && y < MAP_H;
 }
 
 function paintFloor(x, y, id)
@@ -7840,7 +7830,9 @@ function fillFloorTab(body)
     var head = document.createElement('div');
     head.className = 'card';
     head.innerHTML = '<div class="mid"><div class="nm">🧱 바닥 꾸미기</div>' +
-        '<div class="sub">고른 뒤 맵을 <b>탭하거나 쭉 끌면</b> 칸마다 깔려요.<br>관람객이 그 위를 지날 때 효과를 받아요! (칸당 비용·유지비)</div></div>';
+        '<div class="sub">고른 뒤 맵을 <b>탭하거나 쭉 끌면</b> 칸마다 깔려요. (칸당 비용·유지비)<br>' +
+        '관람객이 그 위를 지날 때 효과를 받아요.<br>' +
+        '<b>건물 아래에도 깔 수 있어요</b> — 미리 깔아두면 나중에 옮겨도 빈칸이 안 생겨요!</div></div>';
     body.appendChild(head);
 
     var list = FLOOR_ORDER.slice();
