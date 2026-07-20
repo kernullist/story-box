@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
-<title>스토리 박스</title>
+<title>?ㅽ넗由?諛뺤뒪</title>
 <style>
 /* Aquarium Story - Kairosoft style UI */
 *
@@ -782,7 +782,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '3.5';
+var GAME_VER = '4.0';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 58;        // back wall height above the map (world px)
@@ -1617,23 +1617,24 @@ THEME_MUSEUM.specials.push({ id: 'adventure', name: '대모험전', members: ['p
 // --- visual identity: walls, signs, floor styles ---
 // HD-2D style: deep, rich ground tones so lights and painted floors read
 // as pools of brightness instead of washing out
-THEME_AQUA.wall = { top: '#0a1e2e', face: '#143b56', trim: '#2d6b91' };
+// HD-2D deep bases: lights and painted floors read as bright pools
+THEME_AQUA.wall = { top: '#061624', face: '#103248', trim: '#2a6a90' };
 THEME_AQUA.wallSign = OWNER_NAME + ' 아쿠아리움';
 THEME_AQUA.floorStyle = 'tile';
-THEME_AQUA.floorA = '#2f4a5c';
-THEME_AQUA.floorB = '#293f4f';
+THEME_AQUA.floorA = '#2a4456';
+THEME_AQUA.floorB = '#243c4c';
 
-THEME_MUSEUM.wall = { top: '#241d14', face: '#413528', trim: '#6b5940' };
+THEME_MUSEUM.wall = { top: '#1a1510', face: '#3a3024', trim: '#6a563c' };
 THEME_MUSEUM.wallSign = OWNER_NAME + ' 박물관';
 THEME_MUSEUM.floorStyle = 'marble';
-THEME_MUSEUM.floorA = '#4e4535';
-THEME_MUSEUM.floorB = '#463d2e';
+THEME_MUSEUM.floorA = '#483f30';
+THEME_MUSEUM.floorB = '#40372a';
 
-THEME_CAT.wall = { top: '#2e1c0e', face: '#4d3520', trim: '#7d5533' };
+THEME_CAT.wall = { top: '#24160a', face: '#46301c', trim: '#7a5230' };
 THEME_CAT.wallSign = OWNER_NAME + ' 냥카페';
 THEME_CAT.floorStyle = 'wood';
-THEME_CAT.floorA = '#6b4a2c';
-THEME_CAT.floorB = '#5f4126';
+THEME_CAT.floorA = '#634228';
+THEME_CAT.floorB = '#583a22';
 
 // --- seasonal visitor multipliers (each game has its own peak season) ---
 THEME_AQUA.seasonMult = { spring: 1.05, summer: 1.3, autumn: 1.0, winter: 0.85 };
@@ -2218,19 +2219,25 @@ var VIS_UP_B = [
 
 function drawVisitor(ctx, v, x, y)
 {
-    // soft ground shadow so characters sit on the floor
-    ctx.fillStyle = 'rgba(30,25,20,0.18)';
+    // HD-2D miniature: dual ground shadow + rim so the sprite stands on the floor
+    ctx.save();
+    ctx.fillStyle = 'rgba(12,10,24,0.22)';
     ctx.beginPath();
-    ctx.ellipse(x, y + 3, 7, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + 1, y + 4, 9, 3.5, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = 'rgba(30,22,16,0.38)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 3, 6.5, 2.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
     var t = v.vt;
     var pal = {
         h: t.hair,
         s: t.skin,
-        e: '#202028',
+        e: '#18181e',
         b: t.body,
         p: t.pants,
-        k: '#302820'
+        k: '#241c16'
     };
     var frames;
     var flip = false;
@@ -2253,7 +2260,26 @@ function drawVisitor(ctx, v, x, y)
     var rows = v.moving ? frames[v.animFrame] : frames[0];
     var px = 2;
     // 8x11 sprite at px2 = 16x22, centered on tile
-    drawPix(ctx, rows, pal, x - 8, y - 20, px, flip);
+    var sx = x - 8;
+    var sy = y - 20;
+    drawPix(ctx, rows, pal, sx, sy, px, flip);
+    // key-light rim on lit edge (left when facing camera / right when flipped)
+    ctx.save();
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.fillStyle = 'rgba(255,236,200,0.55)';
+    if (flip)
+    {
+        ctx.fillRect(sx + 12, sy + 2, 2, 10);
+    }
+    else
+    {
+        ctx.fillRect(sx + 2, sy + 2, 2, 10);
+    }
+    // base shade so legs sit in contact shadow
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(20,14,30,0.18)';
+    ctx.fillRect(sx + 2, sy + 16, 12, 6);
+    ctx.restore();
 }
 
 // ---------- fish / animal shapes ----------
@@ -2758,33 +2784,47 @@ function drawWaterTank(ctx, o, wx, wy, t)
     var sp = o.species ? SPECIES[o.species] : null;
     var cold = sp && (sp.shape === 'penguin' || sp.shape === 'beluga');
 
-    // outer rim
-    ctx.fillStyle = isTouch ? '#e8b060' : '#38566a';
+    // outer rim with left-lit / right-shaded metal frame
+    ctx.fillStyle = isTouch ? '#c8944a' : '#2a4254';
     roundRect(ctx, wx + m, wy + m, W - m * 2, H - m * 2, 5);
     ctx.fill();
+    ctx.fillStyle = isTouch ? 'rgba(255,230,170,0.35)' : 'rgba(160,210,240,0.22)';
+    ctx.fillRect(wx + m + 1, wy + m + 1, 3, H - m * 2 - 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.fillRect(wx + W - m - 4, wy + m + 1, 3, H - m * 2 - 2);
 
-    // water
+    // water: deep midtones so bloom only hits true highlights
     var wm = m + 3;
     var g = ctx.createLinearGradient(0, wy + wm, 0, wy + H - wm);
     if (cold)
     {
-        g.addColorStop(0, '#bfeaf5');
-        g.addColorStop(1, '#6fc0dd');
+        g.addColorStop(0, '#8ec8dc');
+        g.addColorStop(0.45, '#4a98b4');
+        g.addColorStop(1, '#2a6884');
     }
     else
     {
-        g.addColorStop(0, '#7fd4ef');
-        g.addColorStop(1, '#2f8fc0');
+        g.addColorStop(0, '#4ab0d0');
+        g.addColorStop(0.45, '#2488b0');
+        g.addColorStop(1, '#18607e');
     }
     ctx.fillStyle = g;
     ctx.fillRect(wx + wm, wy + wm, W - wm * 2, H - wm * 2);
+    // soft inner glow so the tank reads as a light volume
+    var ig = ctx.createRadialGradient(wx + W * 0.4, wy + H * 0.4, 2, wx + W * 0.5, wy + H * 0.55, Math.max(W, H) * 0.55);
+    ig.addColorStop(0, cold ? 'rgba(200,240,255,0.22)' : 'rgba(120,220,255,0.18)');
+    ig.addColorStop(1, 'rgba(20,60,90,0)');
+    ctx.fillStyle = ig;
+    ctx.fillRect(wx + wm, wy + wm, W - wm * 2, H - wm * 2);
 
     // sand or ice bottom
-    ctx.fillStyle = cold ? '#eef8fc' : '#e8d8a0';
+    ctx.fillStyle = cold ? '#d0e8f0' : '#c4a878';
     ctx.fillRect(wx + wm, wy + H - wm - 4, W - wm * 2, 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(wx + wm, wy + H - wm - 4, W - wm * 2, 1);
 
     // wave lines
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
     var wcount = Math.max(1, b.w);
     for (var i = 0; i < wcount; i++)
     {
@@ -2831,16 +2871,18 @@ function drawWaterTank(ctx, o, wx, wy, t)
     }
 
     // bubbles
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
     for (var bb = 0; bb < b.w; bb++)
     {
         var by = (wy + H - wm - 4) - ((t * 12 + bb * 20) % (H - wm * 2 - 6));
         ctx.fillRect(wx + wm + 5 + bb * 22, by, 2, 2);
     }
 
-    // glass shine
-    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    // dual glass shine (primary rim + soft sheet)
+    ctx.fillStyle = 'rgba(255,255,255,0.32)';
     ctx.fillRect(wx + wm + 2, wy + wm + 2, 3, H - wm * 2 - 8);
+    ctx.fillStyle = 'rgba(200,240,255,0.10)';
+    ctx.fillRect(wx + wm + 6, wy + wm + 2, Math.max(4, (W - wm * 2) * 0.28), H - wm * 2 - 6);
 
     // level stars
     if (o.lv && o.lv > 1)
@@ -2861,22 +2903,35 @@ function drawCaseEnclosure(ctx, o, wx, wy, t)
     var sp = o.species ? SPECIES[o.species] : null;
     var isTouch = !!b.touch;
 
-    // pedestal rim
-    ctx.fillStyle = isTouch ? '#c8925a' : '#6a4a28';
+    // pedestal rim: warm wood with directional bevel
+    ctx.fillStyle = isTouch ? '#a87438' : '#4a3420';
     roundRect(ctx, wx + m, wy + m, W - m * 2, H - m * 2, 5);
     ctx.fill();
+    ctx.fillStyle = 'rgba(255,220,150,0.28)';
+    ctx.fillRect(wx + m + 1, wy + m + 1, 3, H - m * 2 - 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    ctx.fillRect(wx + W - m - 4, wy + m + 1, 3, H - m * 2 - 2);
 
-    // inner display wall
+    // inner display wall — deeper so spotlights read
     var wm = m + 3;
     var g = ctx.createLinearGradient(0, wy + wm, 0, wy + H - wm);
-    g.addColorStop(0, '#faf3e2');
-    g.addColorStop(1, '#e8dcc0');
+    g.addColorStop(0, '#e8dcc4');
+    g.addColorStop(0.5, '#d4c4a0');
+    g.addColorStop(1, '#b8a480');
     ctx.fillStyle = g;
+    ctx.fillRect(wx + wm, wy + wm, W - wm * 2, H - wm * 2);
+    // museum spotlight pool behind the exhibit
+    var spot = ctx.createRadialGradient(wx + W * 0.5, wy + wm + 4, 1, wx + W * 0.5, wy + H * 0.45, Math.max(W, H) * 0.5);
+    spot.addColorStop(0, 'rgba(255,236,180,0.35)');
+    spot.addColorStop(1, 'rgba(255,220,140,0)');
+    ctx.fillStyle = spot;
     ctx.fillRect(wx + wm, wy + wm, W - wm * 2, H - wm * 2);
 
     // display base strip
-    ctx.fillStyle = '#b89868';
+    ctx.fillStyle = '#8a6a40';
     ctx.fillRect(wx + wm, wy + H - wm - 4, W - wm * 2, 4);
+    ctx.fillStyle = 'rgba(255,230,170,0.25)';
+    ctx.fillRect(wx + wm, wy + H - wm - 4, W - wm * 2, 1);
 
     if (sp)
     {
@@ -2911,8 +2966,10 @@ function drawCaseEnclosure(ctx, o, wx, wy, t)
     // glass shine
     if (!isTouch)
     {
-        ctx.fillStyle = 'rgba(180,220,255,0.28)';
+        ctx.fillStyle = 'rgba(200,230,255,0.30)';
         ctx.fillRect(wx + wm + 2, wy + wm + 2, 3, H - wm * 2 - 8);
+        ctx.fillStyle = 'rgba(255,245,220,0.08)';
+        ctx.fillRect(wx + wm + 6, wy + wm + 2, Math.max(4, (W - wm * 2) * 0.25), H - wm * 2 - 6);
     }
 
     // level tag
@@ -2933,25 +2990,40 @@ function drawCatEnclosure(ctx, o, wx, wy, t)
     var m = 2;
     var sp = o.species ? SPECIES[o.species] : null;
 
-    // zone rim
-    ctx.fillStyle = !!b.touch ? '#e8b060' : '#a87840';
+    // zone rim with wood bevel
+    ctx.fillStyle = !!b.touch ? '#c89048' : '#7a5428';
     roundRect(ctx, wx + m, wy + m, W - m * 2, H - m * 2, 6);
     ctx.fill();
+    ctx.fillStyle = 'rgba(255,220,150,0.30)';
+    ctx.fillRect(wx + m + 1, wy + m + 1, 3, H - m * 2 - 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.fillRect(wx + W - m - 4, wy + m + 1, 3, H - m * 2 - 2);
 
-    // wooden floor
+    // wooden floor — warmer midtones under HD grade
     var wm = m + 3;
-    ctx.fillStyle = '#eccf9c';
+    var wg = ctx.createLinearGradient(0, wy + wm, 0, wy + H - wm);
+    wg.addColorStop(0, '#d4b07a');
+    wg.addColorStop(1, '#b89058');
+    ctx.fillStyle = wg;
     ctx.fillRect(wx + wm, wy + wm, W - wm * 2, H - wm * 2);
-    ctx.fillStyle = 'rgba(150,110,60,0.35)';
+    ctx.fillStyle = 'rgba(80,50,20,0.30)';
     for (var ln = 1; ln < b.h * 3; ln++)
     {
         ctx.fillRect(wx + wm, wy + wm + ln * 10, W - wm * 2, 1);
     }
+    // soft window light from upper-left
+    var sun = ctx.createLinearGradient(wx + wm, wy + wm, wx + W - wm, wy + H - wm);
+    sun.addColorStop(0, 'rgba(255,230,170,0.18)');
+    sun.addColorStop(1, 'rgba(80,40,10,0.08)');
+    ctx.fillStyle = sun;
+    ctx.fillRect(wx + wm, wy + wm, W - wm * 2, H - wm * 2);
 
     // rug
-    ctx.fillStyle = '#e08888';
+    ctx.fillStyle = '#c06060';
     roundRect(ctx, wx + wm + 3, wy + H - wm - 9, Math.max(10, W - wm * 2 - 12), 6, 3);
     ctx.fill();
+    ctx.fillStyle = 'rgba(255,200,180,0.25)';
+    ctx.fillRect(wx + wm + 4, wy + H - wm - 9, Math.max(8, W - wm * 2 - 14), 1);
 
     // cat tower for bigger zones
     if (b.cls >= 2)
@@ -3031,6 +3103,13 @@ function drawFloorTile(ctx, id, wx, wy)
     }
     ctx.fillStyle = c.base;
     ctx.fillRect(wx, wy, TS, TS);
+    // bevel so painted floors match the raised diorama ground
+    ctx.fillStyle = 'rgba(255,240,210,0.16)';
+    ctx.fillRect(wx, wy, TS, 1);
+    ctx.fillRect(wx, wy, 1, TS);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(wx, wy + TS - 1, TS, 1);
+    ctx.fillRect(wx + TS - 1, wy, 1, TS);
     ctx.fillStyle = c.line;
     if (id === 'fpath')
     {
@@ -3071,14 +3150,15 @@ function drawFloorTile(ctx, id, wx, wy)
 }
 
 // ---------- facility drawing ----------
+// midtone walls so HD grade and shop glow have contrast to bite on
 var FAC_COLORS = {
-    snack:  { roof: '#ff6040', wall: '#fff0d0' },
-    vend:   { roof: '#d02020', wall: '#e04040' },
-    toilet: { roof: '#4080d0', wall: '#d0e8f8' },
-    ice:    { roof: '#70c8f0', wall: '#fff8f0' },
-    cafe:   { roof: '#907050', wall: '#f8e8d0' },
-    gift:   { roof: '#e070a0', wall: '#fff0f4' },
-    photo:  { roof: '#8060c0', wall: '#f0e8ff' }
+    snack:  { roof: '#e04830', wall: '#e8d4a8' },
+    vend:   { roof: '#b01818', wall: '#c03838' },
+    toilet: { roof: '#3070b8', wall: '#b0c8dc' },
+    ice:    { roof: '#50a8d0', wall: '#e0d8c8' },
+    cafe:   { roof: '#785838', wall: '#dcc8a0' },
+    gift:   { roof: '#c05888', wall: '#e0c8d0' },
+    photo:  { roof: '#6848a8', wall: '#c8bce0' }
 };
 
 function drawFacility(ctx, o, wx, wy, t)
@@ -3089,24 +3169,28 @@ function drawFacility(ctx, o, wx, wy, t)
 
     if (o.type === 'bench')
     {
-        ctx.fillStyle = '#8a5a28';
+        ctx.fillStyle = '#6a4218';
         ctx.fillRect(wx + 4, wy + 12, W - 8, 6);
-        ctx.fillStyle = '#a87038';
+        ctx.fillStyle = '#a07030';
         ctx.fillRect(wx + 4, wy + 8, W - 8, 4);
-        ctx.fillStyle = '#5a3a18';
+        ctx.fillStyle = 'rgba(255,230,170,0.30)';
+        ctx.fillRect(wx + 4, wy + 8, W - 8, 1);
+        ctx.fillStyle = '#4a2e10';
         ctx.fillRect(wx + 6, wy + 18, 3, 8);
         ctx.fillRect(wx + W - 9, wy + 18, 3, 8);
         return;
     }
     if (o.type === 'flower')
     {
-        ctx.fillStyle = '#7a5a30';
+        ctx.fillStyle = '#5a3e1c';
         roundRect(ctx, wx + 3, wy + 8, W - 6, H - 12, 4);
         ctx.fill();
-        ctx.fillStyle = '#48a838';
+        ctx.fillStyle = '#348828';
         roundRect(ctx, wx + 5, wy + 10, W - 10, H - 16, 3);
         ctx.fill();
-        var cols = ['#ff5070', '#ffd040', '#ff90c0', '#ffffff'];
+        ctx.fillStyle = 'rgba(180,255,140,0.22)';
+        ctx.fillRect(wx + 5, wy + 10, 3, H - 16);
+        var cols = ['#e04060', '#e0b030', '#e070a0', '#e8e0d0'];
         for (var i = 0; i < 6; i++)
         {
             ctx.fillStyle = cols[i % cols.length];
@@ -3118,14 +3202,16 @@ function drawFacility(ctx, o, wx, wy, t)
     }
     if (o.type === 'sign')
     {
-        ctx.fillStyle = '#8a5a28';
+        ctx.fillStyle = '#6a4218';
         ctx.fillRect(wx + TS / 2 - 2, wy + 12, 4, 14);
-        ctx.fillStyle = '#f8f0d8';
+        ctx.fillStyle = '#e0d4a8';
         ctx.fillRect(wx + 5, wy + 4, TS - 10, 12);
-        ctx.strokeStyle = '#7a4a1a';
+        ctx.fillStyle = 'rgba(255,240,200,0.35)';
+        ctx.fillRect(wx + 5, wy + 4, 2, 12);
+        ctx.strokeStyle = '#5a3810';
         ctx.lineWidth = 2;
         ctx.strokeRect(wx + 5, wy + 4, TS - 10, 12);
-        ctx.fillStyle = '#4080d0';
+        ctx.fillStyle = '#3068a8';
         ctx.fillRect(wx + 8, wy + 7, TS - 16, 2);
         ctx.fillRect(wx + 8, wy + 11, TS - 20, 2);
         return;
@@ -3589,27 +3675,45 @@ function drawFacility(ctx, o, wx, wy, t)
     }
 
     // generic kiosk (snack, ice, cafe, gift, toilet)
+    // HD-2D: left-lit wall, right shade, awning underside, base AO
     var fc = FAC_COLORS[o.type] || { roof: '#909090', wall: '#e8e8e8' };
     ctx.fillStyle = fc.wall;
     ctx.fillRect(wx + 3, wy + 10, W - 6, H - 14);
-    // depth strip along the base for a 3d feel
-    ctx.fillStyle = 'rgba(60,40,20,0.18)';
+    // left rim light
+    ctx.fillStyle = 'rgba(255,240,200,0.28)';
+    ctx.fillRect(wx + 3, wy + 10, 3, H - 14);
+    // right shade
+    ctx.fillStyle = 'rgba(20,14,30,0.22)';
+    ctx.fillRect(wx + W - 6, wy + 10, 3, H - 14);
+    // base AO strip
+    ctx.fillStyle = 'rgba(20,12,8,0.28)';
     ctx.fillRect(wx + 3, wy + H - 8, W - 6, 4);
-    ctx.strokeStyle = '#5a4020';
+    ctx.strokeStyle = '#4a3218';
     ctx.lineWidth = 2;
     ctx.strokeRect(wx + 3, wy + 10, W - 6, H - 14);
     // striped awning
     for (var s = 0; s < Math.floor((W - 4) / 8); s++)
     {
-        ctx.fillStyle = (s % 2 === 0) ? fc.roof : '#ffffff';
+        ctx.fillStyle = (s % 2 === 0) ? fc.roof : '#f0ece0';
         ctx.fillRect(wx + 2 + s * 8, wy + 3, 8, 8);
     }
-    ctx.strokeStyle = '#5a4020';
+    // awning top highlight + underside shadow on the wall
+    ctx.fillStyle = 'rgba(255,245,210,0.35)';
+    ctx.fillRect(wx + 2, wy + 3, W - 4, 2);
+    ctx.fillStyle = 'rgba(30,18,10,0.22)';
+    ctx.fillRect(wx + 3, wy + 11, W - 6, 3);
+    ctx.strokeStyle = '#4a3218';
     ctx.strokeRect(wx + 2, wy + 3, W - 4, 8);
+    // warm shop glow under awning
+    var kg = ctx.createRadialGradient(wx + W / 2, wy + H * 0.55, 1, wx + W / 2, wy + H * 0.6, W * 0.55);
+    kg.addColorStop(0, 'rgba(255,210,120,0.18)');
+    kg.addColorStop(1, 'rgba(255,180,80,0)');
+    ctx.fillStyle = kg;
+    ctx.fillRect(wx + 4, wy + 12, W - 8, H - 16);
     // icon on the front
     ctx.font = 'bold 9px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#4a3010';
+    ctx.fillStyle = '#3a2410';
     var icon = { snack: '🍔', ice: '🍦', cafe: '☕', gift: '🎁', toilet: 'WC' }[o.type] || '';
     ctx.fillText(icon, wx + W / 2, wy + H - 8);
     ctx.textAlign = 'left';
@@ -3658,18 +3762,29 @@ function sideColor(o)
     return c;
 }
 
-// long shadow cast across the floor, away from the key light
+// key light is upper-left; cast shadow leans lower-right (HD-2D diorama)
+// two layers: soft feather + denser core
 function drawCastShadow(ctx, wx, wy, w, h, elev)
 {
     var baseY = wy + h - 2;
-    var lean = Math.min(18, elev * 0.55);
+    var lean = Math.min(22, elev * 0.62);
     ctx.save();
-    ctx.fillStyle = 'rgba(12,10,24,0.34)';
+    // feather
+    ctx.fillStyle = 'rgba(10,8,22,0.16)';
     ctx.beginPath();
-    ctx.moveTo(wx + 2, baseY);
-    ctx.lineTo(wx + w - 2, baseY);
-    ctx.lineTo(wx + w - 2 + lean, baseY + lean * 0.55);
-    ctx.lineTo(wx + 2 + lean, baseY + lean * 0.55);
+    ctx.moveTo(wx, baseY);
+    ctx.lineTo(wx + w, baseY);
+    ctx.lineTo(wx + w + lean + 4, baseY + lean * 0.7);
+    ctx.lineTo(wx + lean + 2, baseY + lean * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    // core
+    ctx.fillStyle = 'rgba(12,10,24,0.36)';
+    ctx.beginPath();
+    ctx.moveTo(wx + 3, baseY);
+    ctx.lineTo(wx + w - 3, baseY);
+    ctx.lineTo(wx + w - 3 + lean * 0.85, baseY + lean * 0.5);
+    ctx.lineTo(wx + 3 + lean * 0.85, baseY + lean * 0.5);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -3689,26 +3804,35 @@ function drawObject(ctx, o, t)
     drawCastShadow(ctx, fx, fy, fw, fh, elev);
     drawContactShadow(ctx, fx, fy, fw, fh);
 
-    // extruded side: from the raised sprite's bottom down to the footprint
+    // extruded side: material body with directional bevel (left lit, right dark)
     var sideTop = fy + fh - elev;
     ctx.save();
     var sc = sideColor(o);
     ctx.fillStyle = sc;
     ctx.fillRect(fx + 2, sideTop, fw - 4, elev);
-    // vertical falloff: the body darkens toward the floor
+    // vertical falloff: warm top lip, deep contact at floor
     var sg = ctx.createLinearGradient(0, sideTop, 0, fy + fh);
-    sg.addColorStop(0, 'rgba(255,240,210,0.18)');
-    sg.addColorStop(0.35, 'rgba(0,0,0,0)');
-    sg.addColorStop(1, 'rgba(0,0,0,0.45)');
+    sg.addColorStop(0, 'rgba(255,236,200,0.28)');
+    sg.addColorStop(0.25, 'rgba(255,220,160,0.06)');
+    sg.addColorStop(0.55, 'rgba(0,0,0,0.08)');
+    sg.addColorStop(1, 'rgba(0,0,0,0.55)');
     ctx.fillStyle = sg;
     ctx.fillRect(fx + 2, sideTop, fw - 4, elev);
-    // lit left edge and shaded right edge give the block volume
-    ctx.fillStyle = 'rgba(255,236,200,0.20)';
+    // horizontal key: left rim / right shade
+    var hg = ctx.createLinearGradient(fx + 2, 0, fx + fw - 2, 0);
+    hg.addColorStop(0, 'rgba(255,236,200,0.30)');
+    hg.addColorStop(0.35, 'rgba(255,236,200,0)');
+    hg.addColorStop(0.7, 'rgba(0,0,0,0)');
+    hg.addColorStop(1, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(fx + 2, sideTop, fw - 4, elev);
+    // crisp edge strips for readable volume at tile scale
+    ctx.fillStyle = 'rgba(255,240,205,0.38)';
     ctx.fillRect(fx + 2, sideTop, 2, elev);
-    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    ctx.fillStyle = 'rgba(0,0,0,0.38)';
     ctx.fillRect(fx + fw - 4, sideTop, 2, elev);
     // dark seam where the body meets the floor
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(fx + 2, fy + fh - 3, fw - 4, 3);
     ctx.restore();
 
@@ -3754,13 +3878,13 @@ function drawObject(ctx, o, t)
 function drawContactShadow(ctx, wx, wy, w, h)
 {
     var cx = wx + w / 2;
-    var cy = wy + h - 3;
-    var rx = w * 0.46;
-    var ry = Math.max(3, h * 0.12);
+    var cy = wy + h - 2;
+    var rx = w * 0.50;
+    var ry = Math.max(3.5, h * 0.14);
     var g = ctx.createRadialGradient(cx, cy, 1, cx, cy, Math.max(rx, ry));
-    g.addColorStop(0, 'rgba(40,28,16,0.34)');
-    g.addColorStop(0.6, 'rgba(40,28,16,0.16)');
-    g.addColorStop(1, 'rgba(40,28,16,0)');
+    g.addColorStop(0, 'rgba(18,12,28,0.42)');
+    g.addColorStop(0.55, 'rgba(18,12,28,0.18)');
+    g.addColorStop(1, 'rgba(18,12,28,0)');
     ctx.save();
     ctx.translate(cx, cy);
     ctx.scale(1, ry / Math.max(rx, ry));
@@ -3771,18 +3895,32 @@ function drawContactShadow(ctx, wx, wy, w, h)
     ctx.restore();
 }
 
-// gentle key light from above plus a shaded base, so flat sprites read
-// as solid objects under the post-processing pass
+// directional key (top-left) + fill + base shade so flat sprites read solid
 function drawTopLight(ctx, wx, wy, w, h)
 {
-    var g = ctx.createLinearGradient(0, wy, 0, wy + h);
-    g.addColorStop(0, 'rgba(255,246,214,0.20)');
-    g.addColorStop(0.45, 'rgba(255,240,200,0.04)');
-    g.addColorStop(1, 'rgba(24,18,40,0.20)');
     ctx.save();
+    // vertical: bright crown, dark feet
+    var g = ctx.createLinearGradient(0, wy, 0, wy + h);
+    g.addColorStop(0, 'rgba(255,246,214,0.30)');
+    g.addColorStop(0.35, 'rgba(255,236,190,0.08)');
+    g.addColorStop(0.7, 'rgba(24,18,40,0.06)');
+    g.addColorStop(1, 'rgba(16,12,28,0.28)');
     ctx.globalCompositeOperation = 'soft-light';
     ctx.fillStyle = g;
     ctx.fillRect(wx + 1, wy + 1, w - 2, h - 2);
+    // horizontal key from upper-left
+    var kg = ctx.createLinearGradient(wx, wy, wx + w, wy + h * 0.6);
+    kg.addColorStop(0, 'rgba(255,240,200,0.22)');
+    kg.addColorStop(0.45, 'rgba(255,240,200,0)');
+    kg.addColorStop(1, 'rgba(20,14,36,0.16)');
+    ctx.fillStyle = kg;
+    ctx.fillRect(wx + 1, wy + 1, w - 2, h - 2);
+    // crisp left rim strip (readable at 32px tile scale)
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(255,240,205,0.22)';
+    ctx.fillRect(wx + 1, wy + 2, 2, h - 4);
+    ctx.fillStyle = 'rgba(10,8,22,0.16)';
+    ctx.fillRect(wx + w - 3, wy + 2, 2, h - 4);
     ctx.restore();
 }
 
@@ -8870,6 +9008,55 @@ function canvasFilterSupported()
     return CANVAS_FILTER_OK;
 }
 
+// per-theme grade tints (Octopath-style colour temperature)
+function themeGradeStops()
+{
+    var id = (THEME && THEME.id) ? THEME.id : 'aqua';
+    if (id === 'museum')
+    {
+        return {
+            top: 'rgba(90,70,140,0.28)',
+            mid: 'rgba(255,220,160,0.12)',
+            bot: 'rgba(255,170,90,0.24)'
+        };
+    }
+    if (id === 'cat')
+    {
+        return {
+            top: 'rgba(100,60,40,0.22)',
+            mid: 'rgba(255,220,150,0.14)',
+            bot: 'rgba(255,180,90,0.26)'
+        };
+    }
+    // aquarium: cool cyan sky, warm floor bounce
+    return {
+        top: 'rgba(50,100,180,0.32)',
+        mid: 'rgba(180,230,255,0.08)',
+        bot: 'rgba(255,190,130,0.20)'
+    };
+}
+
+function applyColourGradeAndVignette(target, W, H)
+{
+    var stops = themeGradeStops();
+    target.save();
+    target.globalCompositeOperation = 'soft-light';
+    var grade = target.createLinearGradient(0, 0, 0, H);
+    grade.addColorStop(0, stops.top);
+    grade.addColorStop(0.50, stops.mid);
+    grade.addColorStop(1, stops.bot);
+    target.fillStyle = grade;
+    target.fillRect(0, 0, W, H);
+    target.restore();
+    target.save();
+    var vg = target.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.30, W / 2, H / 2, Math.max(W, H) * 0.78);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(8,10,28,0.36)');
+    target.fillStyle = vg;
+    target.fillRect(0, 0, W, H);
+    target.restore();
+}
+
 function postProcess()
 {
     var W = cv.width;
@@ -8889,35 +9076,18 @@ function postProcess()
         // graded base + vignette only: safe everywhere, still cinematic
         outCtx.clearRect(0, 0, W, H);
         outCtx.drawImage(worldCv, 0, 0);
-        outCtx.save();
-        outCtx.globalCompositeOperation = 'soft-light';
-        var g2 = outCtx.createLinearGradient(0, 0, 0, H);
-        g2.addColorStop(0, 'rgba(70,105,180,0.30)');
-        g2.addColorStop(0.55, 'rgba(255,236,200,0.10)');
-        g2.addColorStop(1, 'rgba(255,186,120,0.22)');
-        outCtx.fillStyle = g2;
-        outCtx.fillRect(0, 0, W, H);
-        outCtx.restore();
-        outCtx.save();
-        var vg2 = outCtx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.34, W / 2, H / 2, Math.max(W, H) * 0.74);
-        vg2.addColorStop(0, 'rgba(0,0,0,0)');
-        vg2.addColorStop(1, 'rgba(10,12,30,0.30)');
-        outCtx.fillStyle = vg2;
-        outCtx.fillRect(0, 0, W, H);
-        outCtx.restore();
+        applyColourGradeAndVignette(outCtx, W, H);
         return;
     }
 
     // base image, slightly richer so the lighting has something to bite on
     outCtx.clearRect(0, 0, W, H);
-    outCtx.filter = 'saturate(1.14) contrast(1.07)';
+    outCtx.filter = 'saturate(1.16) contrast(1.09)';
     outCtx.drawImage(worldCv, 0, 0);
     outCtx.filter = 'none';
 
     // --- bloom -------------------------------------------------------
-    // the art is bright pastel, so a plain brightness pass blooms
-    // everything. multiplying the image by itself squares the luminance,
-    // which crushes midtones and leaves only true highlights.
+    // squared luminance: only true highlights glow (shop lamps, glass, water)
     fxCtx.globalCompositeOperation = 'source-over';
     fxCtx.clearRect(0, 0, fw, fh);
     fxCtx.drawImage(worldCv, 0, 0, fw, fh);
@@ -8927,15 +9097,16 @@ function postProcess()
     fxCtx.globalCompositeOperation = 'source-over';
     outCtx.save();
     outCtx.globalCompositeOperation = 'lighter';
-    outCtx.globalAlpha = 0.26;
-    outCtx.filter = 'blur(3px)';
+    outCtx.globalAlpha = 0.28;
+    outCtx.filter = 'blur(3.2px)';
     outCtx.drawImage(fxCv, 0, 0, W, H);
     outCtx.filter = 'none';
     outCtx.restore();
 
-    // --- tilt shift: a narrow blurred band top and bottom -------------
+    // --- tilt shift: diorama focus on mid-lower plane -----------------
+    // near wall (top) and near camera (bottom) soft; play area sharp
     fxCtx.clearRect(0, 0, fw, fh);
-    fxCtx.filter = 'blur(1.4px)';
+    fxCtx.filter = 'blur(1.6px)';
     fxCtx.drawImage(worldCv, 0, 0, fw, fh);
     fxCtx.filter = 'none';
     maskCtx.clearRect(0, 0, W, H);
@@ -8944,35 +9115,17 @@ function postProcess()
     maskCtx.globalCompositeOperation = 'destination-in';
     var dof = maskCtx.createLinearGradient(0, 0, 0, H);
     dof.addColorStop(0, 'rgba(0,0,0,1)');
-    dof.addColorStop(0.13, 'rgba(0,0,0,0.35)');
-    dof.addColorStop(0.24, 'rgba(0,0,0,0)');
-    dof.addColorStop(0.80, 'rgba(0,0,0,0)');
-    dof.addColorStop(0.92, 'rgba(0,0,0,0.4)');
-    dof.addColorStop(1, 'rgba(0,0,0,0.95)');
+    dof.addColorStop(0.10, 'rgba(0,0,0,0.45)');
+    dof.addColorStop(0.22, 'rgba(0,0,0,0)');
+    dof.addColorStop(0.72, 'rgba(0,0,0,0)');
+    dof.addColorStop(0.88, 'rgba(0,0,0,0.35)');
+    dof.addColorStop(1, 'rgba(0,0,0,0.92)');
     maskCtx.fillStyle = dof;
     maskCtx.fillRect(0, 0, W, H);
     maskCtx.restore();
     outCtx.drawImage(maskCv, 0, 0);
 
-    // --- colour grade: cool top, warm floor, kept subtle --------------
-    outCtx.save();
-    outCtx.globalCompositeOperation = 'soft-light';
-    var grade = outCtx.createLinearGradient(0, 0, 0, H);
-    grade.addColorStop(0, 'rgba(70,105,180,0.30)');
-    grade.addColorStop(0.55, 'rgba(255,236,200,0.10)');
-    grade.addColorStop(1, 'rgba(255,186,120,0.22)');
-    outCtx.fillStyle = grade;
-    outCtx.fillRect(0, 0, W, H);
-    outCtx.restore();
-
-    // --- vignette ---
-    outCtx.save();
-    var vg = outCtx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.34, W / 2, H / 2, Math.max(W, H) * 0.74);
-    vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, 'rgba(10,12,30,0.30)');
-    outCtx.fillStyle = vg;
-    outCtx.fillRect(0, 0, W, H);
-    outCtx.restore();
+    applyColourGradeAndVignette(outCtx, W, H);
 }
 
 function resizeCanvas()
@@ -9002,22 +9155,31 @@ function drawWall()
     // upper wall in shadow, lower wall catching bounced light from the floor
     var wg = ctx.createLinearGradient(0, 0, 0, WALL_H);
     wg.addColorStop(0, w.top);
-    wg.addColorStop(0.55, w.face);
+    wg.addColorStop(0.45, w.face);
+    wg.addColorStop(0.78, w.face);
     wg.addColorStop(1, w.trim);
     ctx.fillStyle = wg;
     ctx.fillRect(0, 0, W, WALL_H);
-    // ceiling shadow line
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(0, 0, W, 5);
+    // deep ceiling AO band (looks into the room)
+    var ao = ctx.createLinearGradient(0, 0, 0, 22);
+    ao.addColorStop(0, 'rgba(0,0,0,0.62)');
+    ao.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = ao;
+    ctx.fillRect(0, 0, W, 22);
+    ctx.fillStyle = 'rgba(0,0,0,0.50)';
+    ctx.fillRect(0, 0, W, 4);
 
     // structural pillars give the wall real depth
     var bay = 96;
     for (var px = 0; px < W + bay; px += bay)
     {
-        ctx.fillStyle = 'rgba(255,240,205,0.07)';
+        ctx.fillStyle = 'rgba(255,240,205,0.10)';
         ctx.fillRect(px, 5, 16, WALL_H - 16);
-        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillStyle = 'rgba(0,0,0,0.32)';
         ctx.fillRect(px + 16, 5, 5, WALL_H - 16);
+        // pillar top capital shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.20)';
+        ctx.fillRect(px, 5, 21, 3);
     }
 
     // per-theme wall dressing
@@ -9134,6 +9296,16 @@ function renderGround()
                 ctx.fillStyle = ((x + y) % 2 === 0) ? THEME.floorA : THEME.floorB;
             }
             ctx.fillRect(x * TS, y * TS, TS, TS);
+            // tile bevel: top/left catch key light, bottom/right sit in shade
+            // turns the checkerboard into raised diorama floor tiles
+            var px0 = x * TS;
+            var py0 = y * TS;
+            ctx.fillStyle = 'rgba(255,236,200,0.10)';
+            ctx.fillRect(px0, py0, TS, 1);
+            ctx.fillRect(px0, py0, 1, TS);
+            ctx.fillStyle = 'rgba(0,0,0,0.16)';
+            ctx.fillRect(px0, py0 + TS - 1, TS, 1);
+            ctx.fillRect(px0 + TS - 1, py0, 1, TS);
         }
     }
     if (style === 'wood')
@@ -9150,6 +9322,10 @@ function renderGround()
             {
                 var cut = ((y % 2 === 0) ? 0 : 16);
                 ctx.fillRect(x * TS + cut, y * TS + 2, 1, TS - 4);
+                // soft sheen line along the plank grain
+                ctx.fillStyle = 'rgba(255,220,160,0.06)';
+                ctx.fillRect(x * TS + 2, y * TS + 6, TS - 4, 1);
+                ctx.fillStyle = 'rgba(20,10,4,0.42)';
                 if ((x * 13 + y * 7) % 9 === 0)
                 {
                     ctx.fillRect(x * TS + 8 + (x % 3) * 6, y * TS + 10 + (y % 3) * 4, 2, 2);
@@ -9178,13 +9354,13 @@ function renderGround()
                 {
                     if (style === 'tile')
                     {
-                        ctx.fillStyle = 'rgba(150,220,240,0.22)';
+                        ctx.fillStyle = 'rgba(120,200,230,0.18)';
                         ctx.fillRect(x * TS + 8, y * TS + 14, 8, 2);
                         ctx.fillRect(x * TS + 18, y * TS + 18, 8, 2);
                     }
                     else
                     {
-                        ctx.fillStyle = 'rgba(255,240,205,0.20)';
+                        ctx.fillStyle = 'rgba(255,230,170,0.16)';
                         ctx.fillRect(x * TS + 6, y * TS + 20, 12, 2);
                         ctx.fillRect(x * TS + 14, y * TS + 10, 10, 2);
                     }
@@ -9192,6 +9368,27 @@ function renderGround()
             }
         }
     }
+
+    // soft haze near the back wall: distance falloff into the diorama
+    var haze = ctx.createLinearGradient(0, 0, 0, TS * 3.5);
+    if (THEME.floorStyle === 'tile')
+    {
+        haze.addColorStop(0, 'rgba(40,90,130,0.16)');
+    }
+    else
+    {
+        if (THEME.floorStyle === 'marble')
+        {
+            haze.addColorStop(0, 'rgba(60,45,30,0.14)');
+        }
+        else
+        {
+            haze.addColorStop(0, 'rgba(70,40,20,0.12)');
+        }
+    }
+    haze.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, uw * TS, TS * 3.5);
 
     // painted floor tiles sit above the base floor
     for (var fk in S.floorTiles)
@@ -9608,9 +9805,24 @@ function updateMotes(dt)
     }
 }
 
+function moteTint()
+{
+    var id = (THEME && THEME.id) ? THEME.id : 'aqua';
+    if (id === 'museum')
+    {
+        return '#ffe6b0';
+    }
+    if (id === 'cat')
+    {
+        return '#ffe8c0';
+    }
+    return '#d8f0ff';
+}
+
 function drawMotes()
 {
     var uw = usableW() * TS;
+    var tint = moteTint();
     for (var i = 0; i < MOTES.length; i++)
     {
         var m = MOTES[i];
@@ -9620,7 +9832,7 @@ function drawMotes()
             continue;
         }
         ctx.globalAlpha = Math.max(0, m.a * (0.55 + 0.45 * Math.sin(m.ph * 1.7)));
-        ctx.fillStyle = '#fff6d8';
+        ctx.fillStyle = tint;
         ctx.beginPath();
         ctx.arc(x, m.y, Math.max(0.1, m.r), 0, Math.PI * 2);
         ctx.fill();
@@ -9640,7 +9852,7 @@ function drawPointLights()
     var night = S.opened ? nightFactor() : 0;
     var dusk = S.opened ? duskFactor() : 0;
     // lights read strongest at night, but a soft pool is always present
-    var strength = 0.16 + night * 0.55 + dusk * 0.2;
+    var strength = 0.20 + night * 0.55 + dusk * 0.22;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (var i = 0; i < S.objects.length; i++)
@@ -9653,23 +9865,44 @@ function drawPointLights()
         }
         var b = BUILD[o.type];
         var cx = (o.x + oW(o) / 2) * TS;
-        var cy = (o.y + oH(o) / 2) * TS;
-        var rad = (26 + Math.max(b.w, b.h) * 16) * lt;
+        // cast the pool slightly toward the front face (key light side)
+        var cy = (o.y + oH(o) / 2) * TS + 4;
+        var rad = (28 + Math.max(b.w, b.h) * 17) * lt;
         var flick = 1 + Math.sin(GAME_TIME * 3 + o.id) * 0.04;
-        var g = ctx.createRadialGradient(cx, cy, 2, cx, cy, rad * flick);
-        var a = (0.34 * strength * lt).toFixed(3);
-        g.addColorStop(0, 'rgba(255,214,140,' + a + ')');
-        g.addColorStop(0.55, 'rgba(255,180,90,' + (a * 0.4).toFixed(3) + ')');
+        var g = ctx.createRadialGradient(cx - 2, cy - 4, 2, cx, cy, rad * flick);
+        var a = (0.38 * strength * lt).toFixed(3);
+        g.addColorStop(0, 'rgba(255,220,150,' + a + ')');
+        g.addColorStop(0.45, 'rgba(255,186,100,' + (a * 0.45).toFixed(3) + ')');
         g.addColorStop(1, 'rgba(255,160,60,0)');
         ctx.fillStyle = g;
         ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
     }
+    // tanks / cases / cat zones also glow softly as exhibit volumes
+    for (var j = 0; j < S.objects.length; j++)
+    {
+        var to = S.objects[j];
+        var tb = BUILD[to.type];
+        if (tb.kind !== 'tank' || !to.species)
+        {
+            continue;
+        }
+        var tcx = (to.x + oW(to) / 2) * TS;
+        var tcy = (to.y + oH(to) / 2) * TS;
+        var trad = Math.max(tb.w, tb.h) * TS * 0.85;
+        var tg = ctx.createRadialGradient(tcx, tcy, 3, tcx, tcy, trad);
+        var tcol = (THEME.id === 'aqua') ? '140,215,255' : ((THEME.id === 'cat') ? '255,210,150' : '255,220,160');
+        var ta = (0.14 * strength).toFixed(3);
+        tg.addColorStop(0, 'rgba(' + tcol + ',' + ta + ')');
+        tg.addColorStop(1, 'rgba(' + tcol + ',0)');
+        ctx.fillStyle = tg;
+        ctx.fillRect(tcx - trad, tcy - trad, trad * 2, trad * 2);
+    }
     // entrance lantern
     var ex = (ENTRANCE.x + 0.5) * TS;
     var ey = ENTRANCE.y * TS;
-    var er = 74;
+    var er = 78;
     var eg = ctx.createRadialGradient(ex, ey, 3, ex, ey, er);
-    var ea = (0.3 * strength).toFixed(3);
+    var ea = (0.34 * strength).toFixed(3);
     eg.addColorStop(0, 'rgba(255,226,160,' + ea + ')');
     eg.addColorStop(1, 'rgba(255,200,120,0)');
     ctx.fillStyle = eg;
