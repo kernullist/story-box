@@ -844,7 +844,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '4.2';
+var GAME_VER = '4.3';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 58;        // back wall height above the map (world px)
@@ -1114,30 +1114,40 @@ function makeQuests(theme, cfg)
 // no extra save data - because a quest carries check()/prog() functions and
 // only questIdx is ever written to the save file.
 // only uncapped metrics are used, so the ladder can never dead-end.
+//
+// targets are measured from where the player stands when the goal is handed
+// out, NOT from the goal's index. deriving them from the index alone looked
+// tidy but meant someone who finished the chain at year 25 with 800,000G
+// instantly cleared twenty goals in a row and drowned in popups. the rolled
+// target is stored in the save so it stays put across reloads.
 var ENDLESS_KINDS = [
     {
-        key: 'vis', base: 3000, step: 2600,
+        key: 'vis',
+        make: function (S, cycle) { return S.visTotal + 1500 + cycle * 700; },
         name: function (t) { return '손님 ' + fmtNum(t) + '명 맞이하기'; },
         desc: '더 많은 손님을 불러모으자!',
         check: function (S, t) { return S.visTotal >= t; },
         prog: function (S, t) { return fmtNum(Math.min(S.visTotal, t)) + '/' + fmtNum(t); }
     },
     {
-        key: 'fame', base: 900, step: 460,
+        key: 'fame',
+        make: function (S, cycle) { return Math.round(S.fame) + 250 + cycle * 120; },
         name: function (t) { return '인기 ' + fmtNum(t) + ' 달성'; },
         desc: '전국이 알아주는 명소로!',
         check: function (S, t) { return S.fame >= t; },
         prog: function (S, t) { return fmtNum(Math.min(S.fame, t)) + '/' + fmtNum(t); }
     },
     {
-        key: 'money', base: 60000, step: 55000,
+        key: 'money',
+        make: function (S, cycle) { return Math.round(S.money) + 30000 + cycle * 18000; },
         name: function (t) { return '자금 ' + fmtNum(t) + 'G 모으기'; },
         desc: '든든하게 곳간을 채워보자!',
         check: function (S, t) { return S.money >= t; },
         prog: function (S, t) { return fmtNum(Math.min(Math.round(S.money), t)) + '/' + fmtNum(t); }
     },
     {
-        key: 'year', base: 8, step: 3,
+        key: 'year',
+        make: function (S, cycle) { return S.year + 3 + cycle; },
         name: function (t) { return t + '년차까지 운영하기'; },
         desc: '오래오래 사랑받는 곳으로!',
         check: function (S, t) { return S.year >= t; },
@@ -1145,12 +1155,37 @@ var ENDLESS_KINDS = [
     }
 ];
 
-// build endless goal number n (0-based) - deterministic
-function endlessQuest(n)
+function endlessKindByKey(key)
 {
-    var k = ENDLESS_KINDS[n % ENDLESS_KINDS.length];
+    for (var i = 0; i < ENDLESS_KINDS.length; i++)
+    {
+        if (ENDLESS_KINDS[i].key === key)
+        {
+            return ENDLESS_KINDS[i];
+        }
+    }
+    return ENDLESS_KINDS[0];
+}
+
+// the rolled goal for endless slot n, creating it from the current state the
+// first time that slot comes up. keyed by n so it self-corrects on load.
+function endlessGoalFor(S, n)
+{
+    if (!S.endlessGoal || S.endlessGoal.n !== n)
+    {
+        var k = ENDLESS_KINDS[n % ENDLESS_KINDS.length];
+        S.endlessGoal = { n: n, key: k.key, target: k.make(S, Math.floor(n / ENDLESS_KINDS.length)) };
+    }
+    return S.endlessGoal;
+}
+
+// build endless goal number n (0-based)
+function endlessQuest(S, n)
+{
+    var g = endlessGoalFor(S, n);
+    var k = endlessKindByKey(g.key);
+    var target = g.target;
     var cycle = Math.floor(n / ENDLESS_KINDS.length);
-    var target = k.base + k.step * cycle;
     // rewards grow with the ladder so late goals stay worth chasing
     var mul = 1 + cycle * 0.6;
     return {
@@ -1159,13 +1194,13 @@ function endlessQuest(n)
         name: k.name(target),
         desc: k.desc,
         reward: {
-            g: Math.round((3000 + cycle * 1800) * 1),
+            g: Math.round(3000 + cycle * 1800),
             rp: Math.round(60 * mul),
             fame: Math.round(20 * mul),
-            deco: (n % 3 === 2) ? true : false
+            deco: (n % 3 === 2)
         },
-        check: function (S) { return k.check(S, target); },
-        prog: function (S) { return k.prog(S, target); }
+        check: function (S2) { return k.check(S2, target); },
+        prog: function (S2) { return k.prog(S2, target); }
     };
 }
 
@@ -4424,6 +4459,7 @@ function defaultState()
         showCd: 0,
         specialEx: null,
         questIdx: 0,
+        endlessGoal: null,
         floorTiles: {},
         buffs: {},
         requests: [],
@@ -4623,6 +4659,38 @@ function loadTrophyStore()
     return st;
 }
 
+// the shelf records a personal best, not a snapshot: starting a game over
+// must never erase what was already achieved in it. rank is the one field
+// where a smaller number is the better result.
+function bestStat(prev, cur)
+{
+    if (!prev)
+    {
+        return cur;
+    }
+    var out = {};
+    for (var k in cur)
+    {
+        var a = prev[k];
+        var b = cur[k];
+        if (typeof b === 'boolean')
+        {
+            out[k] = !!a || !!b;
+        }
+        else if (typeof b === 'number' && typeof a === 'number')
+        {
+            out[k] = (k === 'rank') ? Math.min(a, b) : Math.max(a, b);
+        }
+        else
+        {
+            out[k] = b;
+        }
+    }
+    // chain length comes from the theme, so always take the current value
+    out.chain = cur.chain;
+    return out;
+}
+
 function saveTrophyStore(st)
 {
     try
@@ -4659,7 +4727,8 @@ function syncTrophies()
         return [];
     }
     var st = loadTrophyStore();
-    st.stats[THEME.id] = {
+    var before = JSON.stringify(st);
+    st.stats[THEME.id] = bestStat(st.stats[THEME.id], {
         opened: !!S.opened,
         level: S.level || 0,
         fame: Math.floor(S.fame || 0),
@@ -4672,7 +4741,7 @@ function syncTrophies()
         combos: (S.combosDone || []).length,
         year: S.year || 1,
         decos: decoTypesOwned()
-    };
+    });
     var fresh = [];
     for (var i = 0; i < TROPHIES.length; i++)
     {
@@ -4683,7 +4752,12 @@ function syncTrophies()
             fresh.push(t);
         }
     }
-    saveTrophyStore(st);
+    // this runs every game day; only touch localStorage when something moved
+    var after = JSON.stringify(st);
+    if (after !== before)
+    {
+        saveTrophyStore(st);
+    }
     return fresh;
 }
 
@@ -4774,6 +4848,11 @@ function grantRandomDeco()
     return pick;
 }
 
+// percentage auras are capped the same way exhibit appeal already caps at +8.
+// duplicates are handed out once everything is collected, so without a ceiling
+// a ring of ornaments around one exhibit would multiply without limit.
+var DECO_AURA_CAP = { auraRp: 60, auraTip: 60 };
+
 // summed decoration effect of one kind within 2 tiles of a spot
 function decoAuraAt(x, y, field)
 {
@@ -4791,6 +4870,11 @@ function decoAuraAt(x, y, field)
         {
             n += b[field];
         }
+    }
+    var cap = DECO_AURA_CAP[field];
+    if (cap !== undefined && n > cap)
+    {
+        n = cap;
     }
     return n;
 }
@@ -5146,7 +5230,10 @@ function sellObject(o)
     S.money += refund;
     rebuildGrid();
     repathAll();
-    addFloat((o.x + oW(o) / 2) * TS, o.y * TS, '+' + refund + 'G', '#ffe060');
+    if (refund > 0)
+    {
+        addFloat((o.x + oW(o) / 2) * TS, o.y * TS, '+' + refund + 'G', '#ffe060');
+    }
     sfx('sell');
 }
 
@@ -6410,7 +6497,7 @@ function currentQuest()
     }
     // the chain is finite; past its end goals keep coming so the chip is
     // never empty and there is always something to chase
-    return (S.questIdx < list.length) ? list[S.questIdx] : endlessQuest(S.questIdx - list.length);
+    return (S.questIdx < list.length) ? list[S.questIdx] : endlessQuest(S, S.questIdx - list.length);
 }
 
 function checkQuest()
@@ -9731,6 +9818,14 @@ function facEffectLines(b)
     {
         lines.push('✨ <b>주변 2칸</b> 안의 ' + THEME.text.enclosureWord + ' 매력 <b>+' + b.aura + '</b>씩 (합계 최대 +8)');
     }
+    if (b.auraRp)
+    {
+        lines.push(THEME.rpIcon + ' <b>주변 2칸</b> 안의 ' + THEME.text.rpWord + ' 획득 <b>+' + b.auraRp + '%</b> (합계 최대 +' + DECO_AURA_CAP.auraRp + '%)');
+    }
+    if (b.auraTip)
+    {
+        lines.push('💰 <b>주변 2칸</b> 안의 매장 매출 <b>+' + b.auraTip + '%</b> (합계 최대 +' + DECO_AURA_CAP.auraTip + '%)');
+    }
     if (b.fun)
     {
         lines.push('🎉 손님 만족 <b>+8</b> · 이용료 <b>+' + b.sell + 'G</b> · 가끔 인기 +1');
@@ -9750,6 +9845,23 @@ function facEffectLines(b)
 function confirmSell(o)
 {
     var b = BUILD[o.type];
+    // decorations are collectibles, not purchases: putting one away returns it
+    // to the collection rather than selling it back for money
+    if (b.kind === 'deco')
+    {
+        queueModal({
+            title: '🎀 치우기',
+            body: '<div style="text-align:center;">「' + b.name + '」을(를) 치울까요?<br><span class="small">수집품이라 없어지지 않아요. 나중에 다시 놓을 수 있어요!</span></div>',
+            buttons: [
+                {
+                    label: '치운다', cls: 'red',
+                    onClick: function () { sellObject(o); }
+                },
+                { label: '취소', cls: 'gray' }
+            ]
+        });
+        return;
+    }
     var refund = Math.floor(b.cost / 2);
     var extra = (b.kind === 'tank' && o.species) ? '<br><span class="bad small">전시 중인 ' + SPECIES[o.species].name + '의 비용은 환불되지 않아요!</span>' : '';
     queueModal({
@@ -9783,7 +9895,15 @@ function openObjectModal(o)
         {
             facBody += '<div style="margin-top:6px;background:#fff0c8;border:2px solid #e0b050;border-radius:8px;padding:6px 8px;font-size:12px;">' + fLines.join('<br>') + '</div>';
         }
-        facBody += '<div style="text-align:center;margin-top:4px;" class="small">유지비 ' + b.maint + 'G/월</div>';
+        // decorations cost nothing to keep, so the upkeep line is just noise
+        if (b.kind === 'deco')
+        {
+            facBody += '<div style="text-align:center;margin-top:4px;" class="small">🎀 수집 장식품 · 유지비 없음</div>';
+        }
+        else
+        {
+            facBody += '<div style="text-align:center;margin-top:4px;" class="small">유지비 ' + b.maint + 'G/월</div>';
+        }
         if (b.stage)
         {
             var performer = firstShowSpecies();
@@ -9812,7 +9932,7 @@ function openObjectModal(o)
             onClick: function () { startMove(o); }
         });
         facBtns.push({
-            label: '판매 +' + fmt(Math.floor(b.cost / 2)) + 'G', cls: 'red',
+            label: (b.kind === 'deco') ? '🎀 치우기' : '판매 +' + fmt(Math.floor(b.cost / 2)) + 'G', cls: 'red',
             onClick: function () { confirmSell(o); }
         });
         facBtns.push({ label: '닫기', cls: 'gray' });
