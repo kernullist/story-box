@@ -782,7 +782,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '4.0';
+var GAME_VER = '4.1';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 58;        // back wall height above the map (world px)
@@ -4192,6 +4192,18 @@ function loadGame()
         {
             S.buffs = {};
         }
+        // pre-rework saves have requests that were auto-tracked; treat any
+        // request without the accept flag as already accepted so nothing stalls
+        if (S.requests)
+        {
+            for (var rq = 0; rq < S.requests.length; rq++)
+            {
+                if (S.requests[rq].accepted === undefined)
+                {
+                    S.requests[rq].accepted = true;
+                }
+            }
+        }
         if (d.jobsAnnounced === undefined)
         {
             // pre-update saves: silently mark already-unlocked jobs as known
@@ -5918,6 +5930,76 @@ function reachableMaxCls()
     return m;
 }
 
+// deadline (in game days) each request kind grants once it is ACCEPTED.
+// the clock only starts on acceptance, so browsing offers never burns time.
+var REQ_LIMIT = {
+    display: 45, fac: 45, facCount: 50, floor: 45, variety: 60,
+    visitors: 60, earn: 60, points: 60, fame: 66, combo: 72,
+    lvup: 72, rank: 78, feature: 54
+};
+// how long an un-accepted offer lingers on the board before it is quietly
+// swapped out for a fresh one. long enough that there is no pressure to decide.
+var OFFER_TTL = 30;
+// how many un-accepted offers may sit on the board at once
+var OFFER_SLOTS = 4;
+
+// count facilities (non-exhibit buildings) the player currently owns
+function ownedFacCount()
+{
+    var n = 0;
+    for (var i = 0; i < S.objects.length; i++)
+    {
+        if (BUILD[S.objects[i].type].kind === 'fac')
+        {
+            n++;
+        }
+    }
+    return n;
+}
+
+// count distinct exhibit species currently on display
+function displayedVariety()
+{
+    var n = 0;
+    for (var i = 0; i < SPECIES_ORDER.length; i++)
+    {
+        if (qDisplayed(S, SPECIES_ORDER[i]))
+        {
+            n++;
+        }
+    }
+    return n;
+}
+
+// theme-specific "do the signature activity N times" request, or null
+function genFeatureRequest(poster)
+{
+    var opts = [];
+    if (THEME.feature === 'feeding')
+    {
+        opts.push({ stat: 'feedCount', add: 3, desc: '먹이 시간을 3번 더 챙겨줘요!' });
+        opts.push({ stat: 'showCount', add: 2, desc: '멋진 공연을 2번 더 열어줘요!' });
+    }
+    else if (THEME.feature === 'expedition')
+    {
+        opts.push({ stat: 'expedCount', add: 2, desc: '발굴 탐험대를 2번 더 보내줘요!' });
+    }
+    else if (THEME.feature === 'mood')
+    {
+        opts.push({ stat: 'playCount', add: 4, desc: '냥이들과 4번 더 놀아줘요!' });
+    }
+    if (opts.length === 0)
+    {
+        return null;
+    }
+    var o = opts[Math.floor(Math.random() * opts.length)];
+    var cur = S[o.stat] || 0;
+    var r = { kind: 'feature', poster: poster, stat: o.stat, base: cur, target: cur + o.add };
+    r.desc = o.desc;
+    r.reward = { g: 1400, rp: 30 + S.level * 6 };
+    return r;
+}
+
 function genRequest()
 {
     var posters = VTYPES.filter(function (t) { return S.fame >= (t.unlockFame || 0) && !t.rare; });
@@ -5960,9 +6042,33 @@ function genRequest()
     }
 
     kinds.push('visitors');
+    kinds.push('earn');
+    kinds.push('points');
+    kinds.push('fame');
+    kinds.push('facCount');
     if (S.combosDone.length < COMBOS.length && S.objects.length >= 3)
     {
         kinds.push('combo');
+    }
+    // ask to paint the floor once the player has some room to work with
+    if (S.objects.length >= 3)
+    {
+        kinds.push('floor');
+    }
+    // ask for more exhibit variety only while there is headroom to add some
+    if (displayedVariety() < SPECIES_ORDER.length)
+    {
+        kinds.push('variety');
+    }
+    // climbing the national ranking is an endgame ask
+    if (S.rank > 1 && S.fame >= 80)
+    {
+        kinds.push('rank');
+    }
+    // theme signature activity, once the venue is running
+    if (S.opened)
+    {
+        kinds.push('feature');
     }
 
     // upgrade requests must push past the current best level, and only if
@@ -5994,21 +6100,33 @@ function genRequest()
     }
 
     var kind = kinds[Math.floor(Math.random() * kinds.length)];
-    // regular requests time out so an ignored one never blocks the board
-    var r = { id: S.reqSeq++, kind: kind, poster: poster, days: 26 + Math.floor(Math.random() * 14) };
+    var r;
+    if (kind === 'feature')
+    {
+        r = genFeatureRequest(poster);
+        // fall back to a visitor drive if the theme has no activity handy
+        if (!r)
+        {
+            kind = 'visitors';
+        }
+    }
+    if (!r)
+    {
+        r = { kind: kind, poster: poster };
+    }
     if (kind === 'display')
     {
         var w = wishes[Math.floor(Math.random() * wishes.length)];
         r.sp = w;
         r.desc = '「' + SPECIES[w].name + '」' + '을(를) 꼭 보고 싶어요!';
-        r.reward = { g: 800 + SPECIES[w].rpCost * 6 };
+        r.reward = { g: 1000 + SPECIES[w].rpCost * 8, rp: 12 };
     }
     if (kind === 'fac')
     {
         var f = facWish[Math.floor(Math.random() * facWish.length)];
         r.fac = f;
         r.desc = '「' + BUILD[f].name + '」이(가) 있으면 좋겠어요!';
-        r.reward = { g: 600 + BUILD[f].cost };
+        r.reward = { g: 800 + Math.round(BUILD[f].cost * 1.2), rp: 12 };
     }
     if (kind === 'visitors')
     {
@@ -6016,20 +6134,72 @@ function genRequest()
         r.target = S.visTotal + add;
         r.add = add;
         r.desc = '친구들에게 소문낼게요! 손님 ' + add + '명을 더 모아봐요!';
-        r.reward = { rp: 40 + S.level * 20 };
+        r.reward = { rp: 55 + S.level * 22, g: 700 };
+    }
+    if (kind === 'earn')
+    {
+        var goal = 2500 + S.level * 1500;
+        r.target = Math.round(S.money) + goal;
+        r.desc = '큰 계획이 있대요! 잔고를 ' + fmt(r.target) + 'G까지 모아봐요!';
+        r.reward = { rp: 60 + S.level * 20, fame: 6 };
+    }
+    if (kind === 'points')
+    {
+        var padd = 60 + S.level * 30;
+        r.target = S.rp + padd;
+        r.padd = padd;
+        r.desc = THEME.text.rpWord + '를 ' + padd + ' 더 모아봐요! (총 ' + r.target + ')';
+        r.reward = { g: 1800 + S.level * 350, fame: 5 };
+    }
+    if (kind === 'fame')
+    {
+        var fadd = 15 + S.level * 6;
+        r.target = S.fame + fadd;
+        r.desc = '이곳을 더 유명하게! 인기를 ' + fadd + ' 더 올려봐요! (총 ' + r.target + ')';
+        r.reward = { g: 1500, rp: 45 };
+    }
+    if (kind === 'facCount')
+    {
+        r.target = ownedFacCount() + (1 + Math.floor(Math.random() * 2));
+        r.desc = '편의시설이 더 있으면 좋겠어요! 시설을 ' + r.target + '개까지 지어봐요!';
+        r.reward = { g: 1300, rp: 25 };
+    }
+    if (kind === 'floor')
+    {
+        var fcur = Object.keys(S.floorTiles || {}).length;
+        var fneed = 12 + Math.floor(Math.random() * 9);
+        r.target = fcur + fneed;
+        r.desc = '바닥을 예쁘게 꾸며봐요! 바닥 타일을 ' + fneed + '칸 더 칠해봐요!';
+        r.reward = { g: 1000, rp: 22 };
+    }
+    if (kind === 'variety')
+    {
+        r.target = displayedVariety() + 1;
+        r.desc = '다양한 전시가 보고 싶어요! 서로 다른 전시물을 ' + r.target + '종 전시해봐요!';
+        r.reward = { g: 1500, fame: 8 };
     }
     if (kind === 'combo')
     {
         r.target = S.combosDone.length + 1;
         r.desc = '특별한 명소가 보고 싶어요! 비밀 스폿을 1개 더 발견해요!';
-        r.reward = { g: 1500, rp: 30 };
+        r.reward = { g: 2200, rp: 45, fame: 6 };
     }
     if (kind === 'lvup')
     {
         r.target = upTarget;
         r.desc = '더 대단한 전시가 보고 싶어요! 아무 전시물이나 Lv' + r.target + '로 강화해요!';
-        r.reward = { g: 1200 + r.target * 600 };
+        r.reward = { g: 1800 + r.target * 800, rp: 30 };
     }
+    if (kind === 'rank')
+    {
+        r.target = Math.max(1, S.rank - (3 + Math.floor(Math.random() * 5)));
+        r.desc = '전국에 이름을 알려봐요! 전국 순위 ' + r.target + '위 안에 들어봐요!';
+        r.reward = { g: 2600, rp: 60, fame: 12 };
+    }
+    r.id = S.reqSeq++;
+    r.accepted = false;
+    r.limit = REQ_LIMIT[r.kind] || 60;
+    r.offerDays = OFFER_TTL;
     return r;
 }
 
@@ -6074,6 +6244,34 @@ function requestMet(r)
     {
         return S.level >= r.target;
     }
+    if (r.kind === 'earn')
+    {
+        return S.money >= r.target;
+    }
+    if (r.kind === 'points')
+    {
+        return S.rp >= r.target;
+    }
+    if (r.kind === 'facCount')
+    {
+        return ownedFacCount() >= r.target;
+    }
+    if (r.kind === 'floor')
+    {
+        return Object.keys(S.floorTiles || {}).length >= r.target;
+    }
+    if (r.kind === 'variety')
+    {
+        return displayedVariety() >= r.target;
+    }
+    if (r.kind === 'rank')
+    {
+        return S.rank <= r.target;
+    }
+    if (r.kind === 'feature')
+    {
+        return (S[r.stat] || 0) >= r.target;
+    }
     return false;
 }
 
@@ -6094,6 +6292,40 @@ function requestProgress(r)
     if (r.kind === 'lv')
     {
         return starStr(S.level) + ' / ' + starStr(r.target);
+    }
+    if (r.kind === 'earn')
+    {
+        return fmt(Math.min(Math.round(S.money), r.target)) + '/' + fmt(r.target) + 'G';
+    }
+    if (r.kind === 'points')
+    {
+        return Math.min(S.rp, r.target) + '/' + r.target;
+    }
+    if (r.kind === 'facCount')
+    {
+        return Math.min(ownedFacCount(), r.target) + '/' + r.target;
+    }
+    if (r.kind === 'floor')
+    {
+        return Math.min(Object.keys(S.floorTiles || {}).length, r.target) + '/' + r.target;
+    }
+    if (r.kind === 'variety')
+    {
+        return Math.min(displayedVariety(), r.target) + '/' + r.target + '종';
+    }
+    if (r.kind === 'rank')
+    {
+        return '현재 ' + S.rank + '위 → 목표 ' + r.target + '위';
+    }
+    if (r.kind === 'feature')
+    {
+        var base = r.base || 0;
+        var done = Math.min((S[r.stat] || 0) - base, r.target - base);
+        if (done < 0)
+        {
+            done = 0;
+        }
+        return done + '/' + (r.target - base);
     }
     return null;
 }
@@ -6117,6 +6349,11 @@ function completeRequest(r)
         S.rp += rw.rp;
         parts.push(THEME.rpIcon + ' +' + rw.rp + THEME.text.rpWord);
     }
+    if (rw.fame)
+    {
+        S.fame += rw.fame;
+        parts.push('💗 인기 +' + rw.fame);
+    }
     var facTxt = '';
     if (r.rewardFac && S.facUnlocked.indexOf(r.rewardFac) < 0)
     {
@@ -6138,33 +6375,88 @@ function completeRequest(r)
     });
 }
 
-// daily request upkeep: complete met requests, deliver new ones
+// player takes on an offered request: the deadline clock starts now
+function acceptRequest(id)
+{
+    for (var i = 0; i < S.requests.length; i++)
+    {
+        var r = S.requests[i];
+        if (r.id === id && !r.accepted)
+        {
+            r.accepted = true;
+            // special requests wait forever; regular ones start their timer
+            if (!r.special)
+            {
+                r.days = r.limit || 60;
+            }
+            sfx('click');
+            showToast('📋 「' + jobName(r.poster) + '」의 의뢰를 수락했어요!');
+            return true;
+        }
+    }
+    return false;
+}
+
+// player turns down an offer, freeing the slot for a fresh one
+function declineRequest(id)
+{
+    for (var i = 0; i < S.requests.length; i++)
+    {
+        var r = S.requests[i];
+        if (r.id === id && !r.accepted)
+        {
+            S.requests.splice(i, 1);
+            sfx('click');
+            return true;
+        }
+    }
+    return false;
+}
+
+// daily request upkeep: complete accepted requests, age deadlines, deliver offers
 function tickRequests()
 {
+    // only ACCEPTED requests can be completed - the player chose to pursue them
     for (var i = S.requests.length - 1; i >= 0; i--)
     {
-        if (requestMet(S.requests[i]))
+        if (S.requests[i].accepted && requestMet(S.requests[i]))
         {
             completeRequest(S.requests[i]);
             return; // one celebration per day
         }
     }
-    // age out regular requests (special ones wait forever)
+    // deadlines only run on accepted regular requests; un-accepted offers
+    // slowly rotate out so the board stays fresh without any time pressure
     for (var e = S.requests.length - 1; e >= 0; e--)
     {
         var rq = S.requests[e];
-        if (rq.special || rq.days === undefined)
+        if (rq.special)
         {
             continue;
         }
-        rq.days--;
-        if (rq.days <= 0)
+        if (rq.accepted)
         {
-            S.requests.splice(e, 1);
-            showToast('📋 「' + jobName(rq.poster) + '」의 의뢰가 기한이 지나 사라졌어요');
+            if (rq.days === undefined)
+            {
+                continue;
+            }
+            rq.days--;
+            if (rq.days <= 0)
+            {
+                S.requests.splice(e, 1);
+                showToast('📋 「' + jobName(rq.poster) + '」의 의뢰가 기한이 지나 사라졌어요');
+            }
+        }
+        else if (rq.offerDays !== undefined)
+        {
+            rq.offerDays--;
+            if (rq.offerDays <= 0)
+            {
+                S.requests.splice(e, 1); // quietly replaced by a new offer later
+            }
         }
     }
-    // one-time special requests appear when famous enough
+    // one-time special requests appear as offers when famous enough
     var specials = THEME.specialRequests || [];
     for (var s = 0; s < specials.length; s++)
     {
@@ -6176,31 +6468,31 @@ function tickRequests()
             S.requests.push({
                 id: S.reqSeq++, kind: sr.kind, target: sr.target, poster: sr.poster,
                 desc: sr.desc, rewardFac: sr.rewardFac, rewardBuff: sr.rewardBuff,
-                special: sr.id, reward: { g: 2000 }
+                special: sr.id, reward: { g: 2500, fame: 10 }, accepted: false
             });
             sfx('modal');
             showToast('📋 특별한 의뢰가 게시판에 붙었습니다!');
             return;
         }
     }
-    // the three-slot cap applies to regular requests only: long-running
-    // special requests must not stop new ones from arriving
-    var generics = 0;
+    // the offer-slot cap applies to un-accepted regular offers only, so a shelf
+    // full of accepted commissions never blocks new offers from arriving
+    var offers = 0;
     for (var q = 0; q < S.requests.length; q++)
     {
-        if (!S.requests[q].special)
+        if (!S.requests[q].special && !S.requests[q].accepted)
         {
-            generics++;
+            offers++;
         }
     }
-    if (generics >= 3)
+    if (offers >= OFFER_SLOTS)
     {
         return;
     }
     S.reqTimer--;
     if (S.reqTimer <= 0)
     {
-        S.reqTimer = 10 + Math.floor(Math.random() * 8);
+        S.reqTimer = 8 + Math.floor(Math.random() * 6);
         S.requests.push(genRequest());
         sfx('modal');
         showToast('📋 새 의뢰가 게시판에 도착했습니다!');
@@ -8015,53 +8307,146 @@ function fillFloorTab(body)
 }
 
 // ----- request board panel -----
+// build the reward summary string for one request
+function requestRewardText(r)
+{
+    var rw = r.reward || {};
+    var t = [];
+    if (rw.g)
+    {
+        t.push('💰 ' + fmt(rw.g) + 'G');
+    }
+    if (rw.rp)
+    {
+        t.push(THEME.rpIcon + ' ' + rw.rp + THEME.text.rpWord);
+    }
+    if (r.rewardFac)
+    {
+        t.push('🎁 <b>「' + BUILD[r.rewardFac].name + '」 해금!</b>');
+    }
+    if (r.rewardBuff && BUFFS[r.rewardBuff])
+    {
+        t.push(BUFFS[r.rewardBuff].icon + ' <b>「' + BUFFS[r.rewardBuff].name + '」 영구 버프!</b>');
+    }
+    // every completion grants a base +5 popularity; fold any reward fame into it
+    t.push('💗 인기 +' + (5 + (rw.fame || 0)));
+    return t.join(' · ');
+}
+
 function openRequestPanel()
 {
     var sh = panelShell('📋 의뢰 게시판');
     var head = document.createElement('div');
     head.className = 'card';
     head.innerHTML = '<div class="mid"><div class="nm">🙋 손님들의 부탁</div>' +
-        '<div class="sub">의뢰를 해결하면 보상을 받아요! 조건을 채우면 <b>자동으로 달성</b>됩니다.<br>특별한 의뢰는 <b>한정 건축물</b>을 해금해 줘요. (최대 3개, 새 의뢰는 며칠마다 도착)</div></div>';
+        '<div class="sub">원하는 의뢰만 <b>골라서 수락</b>하세요. 수락한 의뢰는 조건을 채우면 자동으로 달성돼요.<br>기한은 <b>수락한 뒤부터</b> 시작하니 천천히 골라도 돼요. 특별한 의뢰는 <b>한정 건축물·영구 버프</b>를 줘요.</div></div>';
     sh.body.appendChild(head);
-    if (S.requests.length === 0)
-    {
-        var empty = document.createElement('div');
-        empty.className = 'small';
-        empty.style.textAlign = 'center';
-        empty.style.padding = '14px';
-        empty.textContent = S.opened ? '지금은 붙어있는 의뢰가 없어요. 곧 새 의뢰가 도착할 거예요!' : '개장하면 손님들이 의뢰를 붙이기 시작해요!';
-        sh.body.appendChild(empty);
-    }
+
+    var active = [];
+    var offers = [];
     for (var i = 0; i < S.requests.length; i++)
+    {
+        if (S.requests[i].accepted)
+        {
+            active.push(S.requests[i]);
+        }
+        else
+        {
+            offers.push(S.requests[i]);
+        }
+    }
+
+    // ----- accepted, in-progress commissions -----
+    var h1 = document.createElement('div');
+    h1.className = 'sub';
+    h1.style.margin = '10px 2px 4px';
+    h1.innerHTML = '<b>📌 진행 중인 의뢰 (' + active.length + ')</b>';
+    sh.body.appendChild(h1);
+    if (active.length === 0)
+    {
+        var e1 = document.createElement('div');
+        e1.className = 'small';
+        e1.style.padding = '4px 8px 8px';
+        e1.textContent = '아직 수락한 의뢰가 없어요. 아래에서 골라 수락해 보세요!';
+        sh.body.appendChild(e1);
+    }
+    for (var a = 0; a < active.length; a++)
     {
         (function (r)
         {
             var card = document.createElement('div');
             card.className = 'card';
-            var rw = r.reward || {};
-            var rewardTxt = [];
-            if (rw.g)
-            {
-                rewardTxt.push('💰 ' + fmt(rw.g) + 'G');
-            }
-            if (rw.rp)
-            {
-                rewardTxt.push(THEME.rpIcon + ' ' + rw.rp + THEME.text.rpWord);
-            }
-            if (r.rewardFac)
-            {
-                rewardTxt.push('🎁 <b>「' + BUILD[r.rewardFac].name + '」 해금!</b>');
-            }
-            rewardTxt.push('💗 인기 +5');
             var prog = requestProgress(r);
             var deadline = r.special ? '<span class="small"> · 기한 없음</span>'
                 : (r.days !== undefined ? '<span class="small"> · 남은 기한 ' + r.days + '일</span>' : '');
             card.innerHTML = '<div class="mid">' +
                 '<div class="nm">' + (r.special ? '⭐ ' : '') + '「' + jobName(r.poster) + '」의 의뢰' + deadline + '</div>' +
                 '<div class="sub">' + r.desc + (prog ? ' <b>(' + prog + ')</b>' : '') + '</div>' +
-                '<div class="sub">보상: ' + rewardTxt.join(' · ') + '</div></div>';
+                '<div class="sub">보상: ' + requestRewardText(r) + '</div></div>';
             sh.body.appendChild(card);
-        })(S.requests[i]);
+        })(active[a]);
+    }
+
+    // ----- offers waiting to be accepted -----
+    var h2 = document.createElement('div');
+    h2.className = 'sub';
+    h2.style.margin = '14px 2px 4px';
+    h2.innerHTML = '<b>🙋 받을 수 있는 의뢰 (' + offers.length + ')</b>';
+    sh.body.appendChild(h2);
+    if (offers.length === 0)
+    {
+        var e2 = document.createElement('div');
+        e2.className = 'small';
+        e2.style.padding = '4px 8px 8px';
+        e2.textContent = S.opened ? '지금은 새 제안이 없어요. 곧 새 의뢰가 도착할 거예요!' : '개장하면 손님들이 의뢰를 붙이기 시작해요!';
+        sh.body.appendChild(e2);
+    }
+    for (var o = 0; o < offers.length; o++)
+    {
+        (function (r)
+        {
+            var card = document.createElement('div');
+            card.className = 'card';
+            var prog = requestProgress(r);
+            var deadline = r.special ? '<span class="small"> · 기한 없음</span>'
+                : '<span class="small"> · 기한 ' + (r.limit || 60) + '일 (수락 시 시작)</span>';
+            var mid = document.createElement('div');
+            mid.className = 'mid';
+            mid.innerHTML = '<div class="nm">' + (r.special ? '⭐ ' : '') + '「' + jobName(r.poster) + '」의 의뢰' + deadline + '</div>' +
+                '<div class="sub">' + r.desc + (prog ? ' <b>(' + prog + ')</b>' : '') + '</div>' +
+                '<div class="sub">보상: ' + requestRewardText(r) + '</div>';
+            card.appendChild(mid);
+            var act = document.createElement('div');
+            act.className = 'act';
+            var yes = document.createElement('button');
+            yes.className = 'btn blue';
+            yes.textContent = '수락';
+            yes.addEventListener('click', function ()
+            {
+                if (acceptRequest(r.id))
+                {
+                    openRequestPanel();
+                    updateHUD();
+                }
+            });
+            act.appendChild(yes);
+            if (!r.special)
+            {
+                var no = document.createElement('button');
+                no.className = 'btn';
+                no.textContent = '사양';
+                no.addEventListener('click', function ()
+                {
+                    if (declineRequest(r.id))
+                    {
+                        openRequestPanel();
+                    }
+                });
+                act.appendChild(no);
+            }
+            card.appendChild(act);
+            sh.body.appendChild(card);
+        })(offers[o]);
     }
 }
 
