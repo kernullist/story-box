@@ -622,6 +622,40 @@ html, body
     text-overflow: ellipsis;
 }
 
+/* ---------- room switcher ----------
+   sits opposite the quest chip and stays hidden entirely until a second room
+   is unlocked, so a one-room venue looks exactly as it did before rooms. */
+#roomBar
+{
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: none;
+    gap: 4px;
+    z-index: 25;
+}
+
+#roomBar .roomBtn
+{
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 800;
+    font-family: inherit;
+    color: #cfe4f0;
+    background: rgba(20, 50, 70, 0.88);
+    border: 2px solid rgba(255, 202, 95, 0.35);
+    border-radius: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+#roomBar .roomBtn.on
+{
+    color: #fff;
+    background: rgba(40, 96, 128, 0.95);
+    border-color: #ffca5f;
+}
+
 /* ---------- grand opening button ---------- */
 #openBtn
 {
@@ -805,6 +839,7 @@ input[type="range"]
         </div>
         <button id="openBtn">🎉 개장하기!</button>
         <button id="questChip" style="display:none;"></button>
+        <div id="roomBar" style="display:none;"></div>
         <div id="panelHost"></div>
     </div>
     <div id="toolbar">
@@ -844,14 +879,274 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '4.3';
+var GAME_VER = '4.4';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 58;        // back wall height above the map (world px)
 var MAP_W = 20;         // full map width in tiles
 var MAP_H = 13;         // full map height in tiles
 var EXP_W = [12, 16, 20];   // usable width per expansion stage
+// entrance tile, swapped in per theme by loadTheme (see THEME.entrance)
 var ENTRANCE = { x: 5, y: 12 };
+
+// ---------- venue silhouettes ----------
+// all three games used the identical 20x13 rectangle, which is why they felt
+// like the same place. each theme now carves its own outline out of that box.
+//
+// a mask answers "is this tile part of the venue" for a given usable width.
+// the cuts are deliberately small (<= 16 tiles) so no theme ends up cramped -
+// floor area is the job of the rooms feature, not of these shapes.
+//
+// masks must keep every tile reachable from the entrance; verifyShapes() below
+// asserts that at load time rather than leaving it to chance.
+function shapeRect(x, y, uw)
+{
+    return x < uw;
+}
+
+// each theme also gets a landmark: a solid feature standing in the middle of
+// the floor that traffic has to flow around. the silhouette alone was far too
+// subtle - the interiors were identical, which is exactly what felt samey.
+// the landmark is what actually changes how a venue reads and walks.
+//
+// landmarks sit at FIXED map coordinates, never at a fraction of the current
+// width. centring them on the usable width made them slide sideways every time
+// the player expanded, which stranded whatever was standing on the new spot.
+// tiles beyond the current width are locked construction ground anyway, so a
+// landmark placed out there simply appears with the land when it unlocks -
+// on empty ground, with nothing to strand.
+function inRect(r, x, y)
+{
+    return x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
+}
+
+// [x0, y0, x1, y1] per landmark
+var LANDMARKS_AQUA = [
+    [6, 4, 9, 5],       // coral reef core, mid-floor
+    [16, 8, 17, 9]      // outer rock, revealed by the last expansion
+];
+// a colonnade: paired stone pillars marching down the hall in two rows
+var LANDMARKS_MUSEUM = [
+    [3, 4, 3, 4], [7, 4, 7, 4], [11, 4, 11, 4], [15, 4, 15, 4],
+    [3, 8, 3, 8], [7, 8, 7, 8], [11, 8, 11, 8], [15, 8, 15, 8]
+];
+var LANDMARKS_CAT = [
+    [2, 3, 3, 4],       // window nook
+    [8, 7, 9, 8],       // hearth nook
+    [13, 3, 14, 4]      // extra nook out in the expansion ground
+];
+
+function hitsLandmark(list, x, y)
+{
+    for (var i = 0; i < list.length; i++)
+    {
+        if (inRect(list[i], x, y))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+// aquarium: a coral reef core mid-floor, so visitors circulate around it
+// like a real tank gallery, plus asymmetric shoulders
+function shapeAqua(x, y, uw)
+{
+    if (x >= uw)
+    {
+        return false;
+    }
+    // top-right shoulder cut (deep-water rock face)
+    if (y <= 1 && x >= uw - 3)
+    {
+        return false;
+    }
+    // top-left shoulder, one tile shallower
+    if (y === 0 && x <= 1)
+    {
+        return false;
+    }
+    // bottom-right corner rounded off
+    if (y >= MAP_H - 2 && x >= uw - 2)
+    {
+        return false;
+    }
+    // reef cores, fixed in place so expanding never shifts them
+    if (hitsLandmark(LANDMARKS_AQUA, x, y))
+    {
+        return false;
+    }
+    return true;
+}
+
+// museum: a symmetric stepped facade with a central rotunda - grand, formal,
+// and it splits the hall into left and right wings
+function shapeMuseum(x, y, uw)
+{
+    if (x >= uw)
+    {
+        return false;
+    }
+    // both top corners stepped back, mirrored
+    if (y === 0 && (x <= 2 || x >= uw - 3))
+    {
+        return false;
+    }
+    if (y === 1 && (x === 0 || x === uw - 1))
+    {
+        return false;
+    }
+    // bottom corners clipped to match
+    if (y === MAP_H - 1 && (x === 0 || x === uw - 1))
+    {
+        return false;
+    }
+    // colonnade: the repeating rhythm reads as formal at any width, and each
+    // pillar stays put as the hall grows
+    if (hitsLandmark(LANDMARKS_MUSEUM, x, y))
+    {
+        return false;
+    }
+    return true;
+}
+
+// cat cafe: a snug room with every corner rounded off
+function shapeCat(x, y, uw)
+{
+    if (x >= uw)
+    {
+        return false;
+    }
+    var left = x;
+    var right = uw - 1 - x;
+    var top = y;
+    var bottom = MAP_H - 1 - y;
+    // clip the four corners on a short diagonal
+    if (left + top <= 1)
+    {
+        return false;
+    }
+    if (right + top <= 1)
+    {
+        return false;
+    }
+    if (left + bottom <= 1)
+    {
+        return false;
+    }
+    if (right + bottom <= 1)
+    {
+        return false;
+    }
+    // cosy nooks break the room into snug pockets instead of one open hall
+    if (hitsLandmark(LANDMARKS_CAT, x, y))
+    {
+        return false;
+    }
+    return true;
+}
+// ---------- annex outlines ----------
+// the second room each theme unlocks. it is NOT a copy of the hall: it gets
+// its own silhouette and its own landmark so that walking into it reads as
+// going somewhere else, which is the whole point of adding it.
+// landmarks are fixed map coordinates for the same reason as the hall's - a
+// landmark placed at a fraction of the current width slides sideways when the
+// player expands and strands whatever was standing there.
+var LANDMARKS_AQUA_DEEP = [
+    [8, 5, 11, 7]       // the abyss: a deep trench wall in the middle
+];
+// two skylit courtyards, mirrored down the wing
+var LANDMARKS_MUSEUM_WING = [
+    [4, 4, 5, 5], [4, 8, 5, 9],
+    [14, 4, 15, 5], [14, 8, 15, 9]
+];
+var LANDMARKS_CAT_UP = [
+    [2, 9, 3, 10],      // the staircase arriving from the floor below
+    [12, 5, 13, 6]      // sunbeam nook by the dormer window
+];
+
+// aquarium annex: a deep-sea hall. the ceiling closes in across the whole top
+// so it feels like being under water rather than in a bright gallery.
+function shapeAquaDeep(x, y, uw)
+{
+    if (x >= uw)
+    {
+        return false;
+    }
+    // the pressure dome: top row pinched from both sides, second row a little
+    if (y === 0 && (x <= 3 || x >= uw - 4))
+    {
+        return false;
+    }
+    if (y === 1 && (x <= 1 || x >= uw - 2))
+    {
+        return false;
+    }
+    // trench walls
+    if (hitsLandmark(LANDMARKS_AQUA_DEEP, x, y))
+    {
+        return false;
+    }
+    return true;
+}
+
+// museum annex: a long wing with skylit courtyards punched through it
+function shapeMuseumWing(x, y, uw)
+{
+    if (x >= uw)
+    {
+        return false;
+    }
+    // the wing is narrower than the grand hall at both ends
+    if (x === 0 && (y <= 1 || y >= MAP_H - 2))
+    {
+        return false;
+    }
+    if (x === uw - 1 && (y <= 1 || y >= MAP_H - 2))
+    {
+        return false;
+    }
+    if (hitsLandmark(LANDMARKS_MUSEUM_WING, x, y))
+    {
+        return false;
+    }
+    return true;
+}
+
+// cat cafe upstairs: an attic, so the roof slopes in hard along the top
+function shapeCatUp(x, y, uw)
+{
+    if (x >= uw)
+    {
+        return false;
+    }
+    var left = x;
+    var right = uw - 1 - x;
+    // sloped roof: a deeper diagonal than the ground floor's rounded corners
+    if (left + y <= 3)
+    {
+        return false;
+    }
+    if (right + y <= 3)
+    {
+        return false;
+    }
+    // the two bottom corners stay softly rounded like downstairs
+    if (left + (MAP_H - 1 - y) <= 1)
+    {
+        return false;
+    }
+    if (right + (MAP_H - 1 - y) <= 1)
+    {
+        return false;
+    }
+    if (hitsLandmark(LANDMARKS_CAT_UP, x, y))
+    {
+        return false;
+    }
+    return true;
+}
+
 var DAY_MS = 1250;      // real ms per game day at speed x1
 var DAYS_PER_MONTH = 24;
 var MAX_VISITORS = 34;        // normal concurrent ceiling
@@ -1065,6 +1360,9 @@ function qDisplayed(S, sp)
     return false;
 }
 
+// unlike the other q* helpers this one reads COORDINATES, so it is a per-room
+// test even though it feeds a goal. two exhibits in different rooms are never
+// "next to each other" no matter what their x/y say.
 function qGoodPairExists(S)
 {
     var tanks = S.objects.filter(function (o) { return BUILD[o.type].kind === 'tank' && o.species; });
@@ -1072,6 +1370,10 @@ function qGoodPairExists(S)
     {
         for (var j = i + 1; j < tanks.length; j++)
         {
+            if ((tanks[i].room || 0) !== (tanks[j].room || 0))
+            {
+                continue;
+            }
             var dist = Math.max(Math.abs(tanks[i].x - tanks[j].x), Math.abs(tanks[i].y - tanks[j].y));
             if (dist <= 2 && persRelation(SPECIES[tanks[i].species].pers, SPECIES[tanks[j].species].pers) > 0)
             {
@@ -2395,6 +2697,40 @@ appendEndgameQuests(THEME_AQUA);
 appendEndgameQuests(THEME_MUSEUM);
 appendEndgameQuests(THEME_CAT);
 
+// --- venue outline + entrance per theme ---
+// the entrance moves too: where visitors enter changes how the whole floor
+// reads, and it used to be the same tile in all three games
+// surroundColor fills whatever the outline carves away, so the landmark in the
+// middle reads as a built feature (reef / rotunda / hearth) rather than a hole
+THEME_AQUA.surroundColor = '#1c3a44';
+THEME_AQUA.surroundAccent = '#2f6f6a';
+THEME_MUSEUM.surroundColor = '#3a3428';
+THEME_MUSEUM.surroundAccent = '#7a6f52';
+THEME_CAT.surroundColor = '#38261c';
+THEME_CAT.surroundAccent = '#6d4630';
+
+// --- rooms ---
+// a room is one screenful of venue. growing the venue by adding rooms rather
+// than by growing the map is what keeps tiles at 32px and leaves the
+// drag-to-paint controls alone; see docs/plan/2026-07-22-map-variety.md.
+// room 0 is the hall each theme already had. every room carries its own
+// outline and its own entrance, so visitors never have to cross between them.
+THEME_AQUA.rooms = [
+    { id: 'main', name: '본관', icon: '🐠', shape: shapeAqua, entrance: { x: 5, y: 12 } },
+    { id: 'deep', name: '심해관', icon: '🌊', shape: shapeAquaDeep, entrance: { x: 2, y: 12 } }
+];
+THEME_MUSEUM.rooms = [
+    // entrance sits at the centre of the formal facade
+    { id: 'main', name: '본관', icon: '🏛️', shape: shapeMuseum, entrance: { x: 9, y: 12 } },
+    { id: 'wing', name: '별관', icon: '🏺', shape: shapeMuseumWing, entrance: { x: 6, y: 12 } }
+];
+THEME_CAT.rooms = [
+    // tucked to one side, like a shopfront
+    { id: 'main', name: '1층', icon: '🏠', shape: shapeCat, entrance: { x: 3, y: 12 } },
+    // the stairs arrive at the left, so the door sits away from them
+    { id: 'up', name: '2층', icon: '🪜', shape: shapeCatUp, entrance: { x: 7, y: 12 } }
+];
+
 var THEMES = { aqua: THEME_AQUA, museum: THEME_MUSEUM, cat: THEME_CAT };
 var THEME_ORDER = ['aqua', 'museum', 'cat'];
 
@@ -2402,6 +2738,11 @@ function loadTheme(id)
 {
     var t = THEMES[id];
     THEME = t;
+    // ENTRANCE stays a global because a dozen call sites read it every frame.
+    // it now means "the entrance of the room being shown" and is re-pointed by
+    // setRoom(); this seeds it with room 0 for the load that happens before
+    // any game state exists.
+    ENTRANCE = (t.rooms && t.rooms[0].entrance) || { x: 5, y: 12 };
     BUILD = t.build;
     BUILD_ORDER_TANK = BUILD_TANK_ORDER;
     BUILD_ORDER_FAC = t.facOrder || BUILD_FAC_ORDER;
@@ -4441,6 +4782,8 @@ function defaultState()
         bgmOn: true,
         hd: true,
         expansion: 0,
+        room: 0,          // room currently on screen
+        roomsOpen: 1,     // how many rooms have been unlocked
         objects: [],
         unlocked: [st],
         spLv: lv,
@@ -4460,7 +4803,6 @@ function defaultState()
         specialEx: null,
         questIdx: 0,
         endlessGoal: null,
-        floorTiles: {},
         buffs: {},
         requests: [],
         decoOwned: {},
@@ -4475,7 +4817,11 @@ function defaultState()
         expedCount: 0,
         specialCount: 0,
         dexDone: false,
-        tutorialDone: false
+        tutorialDone: false,
+        // per-room save data, indexed the same as THEME.rooms. kept separate
+        // from THEME.rooms (which holds the fixed outline/entrance) because
+        // this half is player progress and has to survive in the save file.
+        rooms: [{ floorTiles: {} }]
     };
 }
 
@@ -4488,12 +4834,17 @@ var SHOW = null;
 function newGame()
 {
     S = defaultState();
+    // "start over" from the in-game menu calls this WITHOUT going through
+    // loadTheme(), so ENTRANCE can still be pointing at the annex the player
+    // was looking at a moment ago while S.room has gone back to 0. re-point it
+    // by hand or visitors spawn on a tile that may not even be inside room 0.
+    ENTRANCE = roomDef(0).entrance;
     VISITORS = [];
     FLOATS = [];
     EMOTES = [];
     objIdSeq = 1;
     // starter layout: one small enclosure with the starter species
-    var o = { id: objIdSeq++, type: 'small', x: 4, y: 6, species: THEME.starter, lv: 1, mood: 80 };
+    var o = { id: objIdSeq++, type: 'small', x: 4, y: 6, species: THEME.starter, lv: 1, mood: 80, room: 0 };
     S.objects.push(o);
     FEED = null;
     feedCd = 18;
@@ -4562,10 +4913,6 @@ function loadGame()
         {
             S.hd = true;
         }
-        if (!S.floorTiles)
-        {
-            S.floorTiles = {};
-        }
         if (!S.buffs)
         {
             S.buffs = {};
@@ -4598,6 +4945,90 @@ function loadGame()
                 }
             }
         }
+        // --- rooms (v4.4) ---
+        // saves written before rooms existed describe a single hall, and every
+        // building in them belongs to it. this has to run before the rescue
+        // pass below, which asks each object which room it is standing in.
+        if (S.roomsOpen === undefined)
+        {
+            S.roomsOpen = 1;
+        }
+        if (S.roomsOpen > roomCount())
+        {
+            S.roomsOpen = roomCount();
+        }
+        if (S.roomsOpen < 1)
+        {
+            S.roomsOpen = 1;
+        }
+        for (var ro = 0; ro < S.objects.length; ro++)
+        {
+            if (S.objects[ro].room === undefined)
+            {
+                S.objects[ro].room = 0;
+            }
+            // a save from a build with more rooms than this one would otherwise
+            // hold buildings in a room that cannot be reached or drawn. pull
+            // them back into the main hall - rescueStrandedObjects() below then
+            // finds each of them a legal tile there.
+            if (S.objects[ro].room >= roomCount())
+            {
+                S.objects[ro].room = 0;
+            }
+        }
+        // a save made before the annex existed can already be well past the
+        // goal that unlocks it - open it silently rather than making the
+        // player re-earn something they have already done
+        syncRoomUnlocks();
+        // never resume looking at a room that is not unlocked (or no longer
+        // exists, if a future build removes one)
+        if (S.room === undefined || S.room < 0 || S.room >= S.roomsOpen)
+        {
+            S.room = 0;
+        }
+        ENTRANCE = roomDef(S.room).entrance;
+        // painted floor used to be one flat map for the single hall. move it
+        // into room 0 rather than dropping it - the player paid for every tile.
+        if (!S.rooms || !S.rooms.length)
+        {
+            S.rooms = [{ floorTiles: {} }];
+        }
+        if (d.floorTiles)
+        {
+            var legacyFloor = roomFloors(0);
+            for (var lk in d.floorTiles)
+            {
+                if (legacyFloor[lk] === undefined)
+                {
+                    legacyFloor[lk] = d.floorTiles[lk];
+                }
+            }
+        }
+        delete S.floorTiles;
+        // the venue outline changed in v4.4, so a save made on the old plain
+        // rectangle can hold buildings on tiles that are now outside it. move
+        // them to the nearest free spot rather than ever dropping them.
+        rescueStrandedObjects();
+        // painted floor outside the new outline would render over the surround.
+        // each room has its own outline, so this is checked room by room.
+        // the range is every room THIS BUILD knows about, not just the unlocked
+        // ones: a locked room can already hold paint from an older save, and it
+        // has to be clean before it is ever shown. rooms past roomCount() are
+        // left untouched - this build has no outline to judge them against, and
+        // guessing would throw away tiles a future build could still use.
+        var frMax = Math.min(S.rooms.length, roomCount());
+        for (var fr = 0; fr < frMax; fr++)
+        {
+            var ftiles = roomFloors(fr);
+            for (var fk in ftiles)
+            {
+                var fp = fk.split(',');
+                if (!inVenue(parseInt(fp[0], 10), parseInt(fp[1], 10), fr))
+                {
+                    delete ftiles[fk];
+                }
+            }
+        }
         VISITORS = [];
         FLOATS = [];
         EMOTES = [];
@@ -4623,11 +5054,293 @@ function loadGame()
 }
 
 // ---------- grid / placement ----------
-var walkGrid = null; // 2d array true=walkable
+// one 2d array (true = walkable) per room, not just for the room on screen.
+// visitors keep touring rooms the player is not looking at, so every room they
+// can be standing in needs a live grid to path on.
+var walkGrids = [];
 
 function usableW()
 {
     return EXP_W[S.expansion];
+}
+
+// ---------- rooms ----------
+// a room is one screenful of venue. objects live in ONE flat array with a room
+// field rather than being split into per-room arrays, and that choice is load
+// bearing: it keeps objIdSeq and getObj globally unique for free, and every
+// whole-venue tally that already walks S.objects (upkeep, quest checks,
+// trophies, how many of a decoration are placed) stays correct untouched.
+// the flip side is that anything reading COORDINATES must scope itself to one
+// room by hand - two objects in different rooms can share the same (x, y).
+function roomCount()
+{
+    return (THEME && THEME.rooms) ? THEME.rooms.length : 1;
+}
+
+// never returns null: callers use the result to read a shape or an entrance,
+// and throwing here inside loadGame() would be reported to the player as a
+// corrupt save, which is a far worse outcome than falling back to the hall.
+function roomDef(r)
+{
+    if (!THEME || !THEME.rooms || THEME.rooms.length === 0)
+    {
+        return { id: 'main', name: '본관', shape: null, entrance: ENTRANCE };
+    }
+    return THEME.rooms[r] || THEME.rooms[0];
+}
+
+// the room currently being shown and edited
+function curRoom()
+{
+    return (S && S.room) ? S.room : 0;
+}
+
+// which room an object stands in. saves written before rooms existed have no
+// field at all, and those objects all belong to the original hall.
+function objRoom(o)
+{
+    return o.room || 0;
+}
+
+// objects standing in one room (defaults to the room on screen). every
+// coordinate-reading routine - pathing, combos, auras, neighbours, rendering -
+// has to go through this.
+function roomObjects(r)
+{
+    if (r === undefined)
+    {
+        r = curRoom();
+    }
+    var out = [];
+    for (var i = 0; i < S.objects.length; i++)
+    {
+        if (objRoom(S.objects[i]) === r)
+        {
+            out.push(S.objects[i]);
+        }
+    }
+    return out;
+}
+
+// how many rooms the player has actually unlocked
+function roomsOpen()
+{
+    var n = (S && S.roomsOpen) ? S.roomsOpen : 1;
+    if (n > roomCount())
+    {
+        n = roomCount();
+    }
+    return n < 1 ? 1 : n;
+}
+
+// the annex opens once the player has finished quest index 10, "expand the
+// grounds" - so the two ideas about having more space arrive back to back.
+// it is tied to the goal chain rather than to a request because every player
+// walks the chain, and content nobody reliably sees is not worth building.
+var ROOM_UNLOCK_QUEST = 11;
+
+// open any room the player's progress has earned. safe to call repeatedly: it
+// only ever opens rooms, never closes one. returns how many opened this call
+// so the caller can decide whether that deserves a celebration.
+function syncRoomUnlocks()
+{
+    if (!S)
+    {
+        return 0;
+    }
+    var want = ((S.questIdx || 0) >= ROOM_UNLOCK_QUEST) ? 2 : 1;
+    if (want > roomCount())
+    {
+        want = roomCount();
+    }
+    if (want <= S.roomsOpen)
+    {
+        return 0;
+    }
+    var opened = want - S.roomsOpen;
+    S.roomsOpen = want;
+    rebuildGrid();
+    return opened;
+}
+
+// switch the view to another room. the caller is responsible for cancelling
+// any placement in progress first - see setRoom's callers in ui.js.
+function setRoom(r)
+{
+    if (r < 0 || r >= roomsOpen())
+    {
+        return false;
+    }
+    S.room = r;
+    var def = roomDef(r);
+    ENTRANCE = def ? def.entrance : ENTRANCE;
+    // these two point at a specific building and are drawn on screen; leaving
+    // them pointed into the room we just left would draw the highlight over
+    // whatever happens to share those coordinates here
+    FEED = null;
+    SHOW = null;
+    rebuildGrid();
+    return true;
+}
+
+// single answer to "is this tile part of the venue".
+// the venue used to be a plain rectangle and this test was written inline as
+// "x < usableW()" in a dozen places; routing it all through here is what lets
+// each theme have its own outline, and now each room its own outline too.
+// room defaults to the one on screen, which is why the original call sites
+// needed no changes when rooms arrived.
+function inVenue(x, y, room)
+{
+    if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H)
+    {
+        return false;
+    }
+    if (room === undefined)
+    {
+        room = curRoom();
+    }
+    var def = roomDef(room);
+    var shape = def && def.shape;
+    if (!shape)
+    {
+        return x < usableW();
+    }
+    return shape(x, y, usableW());
+}
+
+// does this object's whole footprint sit inside the venue at (x,y)?
+function footprintFits(o, x, y, room)
+{
+    var w = oW(o);
+    var h = oH(o);
+    for (var dy = 0; dy < h; dy++)
+    {
+        for (var dx = 0; dx < w; dx++)
+        {
+            if (!inVenue(x + dx, y + dy, room))
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// is any other object already sitting on that footprint? only objects in the
+// same room can collide - the same tile exists once per room.
+function footprintClear(o, x, y, room)
+{
+    var w = oW(o);
+    var h = oH(o);
+    if (room === undefined)
+    {
+        room = curRoom();
+    }
+    var list = roomObjects(room);
+    for (var i = 0; i < list.length; i++)
+    {
+        var b = list[i];
+        if (b === o)
+        {
+            continue;
+        }
+        var bw = oW(b);
+        var bh = oH(b);
+        if (x < b.x + bw && x + w > b.x && y < b.y + bh && y + h > b.y)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+// after an outline change, buildings can end up outside the venue. slide each
+// one to the nearest spot that fits. a building the player paid for must never
+// vanish silently, so anything that cannot be placed is reported, not dropped.
+function rescueStrandedObjects()
+{
+    if (!S || !S.objects)
+    {
+        return 0;
+    }
+    var moved = 0;
+    var stuck = 0;
+    for (var i = 0; i < S.objects.length; i++)
+    {
+        var o = S.objects[i];
+        // each object is rescued inside its OWN room, not the one on screen
+        var r = objRoom(o);
+        if (footprintFits(o, o.x, o.y, r))
+        {
+            continue;
+        }
+        var best = null;
+        var bestD = 1e9;
+        for (var y = 0; y < MAP_H; y++)
+        {
+            for (var x = 0; x < MAP_W; x++)
+            {
+                if (!footprintFits(o, x, y, r) || !footprintClear(o, x, y, r))
+                {
+                    continue;
+                }
+                var d = Math.abs(x - o.x) + Math.abs(y - o.y);
+                if (d < bestD)
+                {
+                    bestD = d;
+                    best = { x: x, y: y };
+                }
+            }
+        }
+        if (best)
+        {
+            o.x = best.x;
+            o.y = best.y;
+            moved++;
+        }
+        else
+        {
+            stuck++;
+        }
+    }
+    if (moved > 0)
+    {
+        rebuildGrid();
+        showToast('부지 모양이 바뀌어 시설 ' + moved + '개를 안쪽으로 옮겼어요');
+    }
+    if (stuck > 0)
+    {
+        showToast('자리를 못 찾은 시설이 ' + stuck + '개 있어요');
+    }
+    return moved;
+}
+
+// how many tiles one room actually has right now
+function venueArea(room)
+{
+    var n = 0;
+    for (var y = 0; y < MAP_H; y++)
+    {
+        for (var x = 0; x < MAP_W; x++)
+        {
+            if (inVenue(x, y, room))
+            {
+                n++;
+            }
+        }
+    }
+    return n;
+}
+
+// floor space across every room the player has unlocked
+function totalVenueArea()
+{
+    var n = 0;
+    for (var r = 0; r < roomsOpen(); r++)
+    {
+        n += venueArea(r);
+    }
+    return n;
 }
 
 // ---------- trophies (shared across all three games) ----------
@@ -4853,13 +5566,16 @@ function grantRandomDeco()
 // a ring of ornaments around one exhibit would multiply without limit.
 var DECO_AURA_CAP = { auraRp: 60, auraTip: 60 };
 
-// summed decoration effect of one kind within 2 tiles of a spot
-function decoAuraAt(x, y, field)
+// summed decoration effect of one kind within 2 tiles of a spot.
+// only decorations standing in the SAME room count - otherwise an ornament in
+// the annex would buff a tile in the main hall that happens to share its (x,y)
+function decoAuraAt(x, y, field, room)
 {
     var n = 0;
-    for (var i = 0; i < S.objects.length; i++)
+    var list = roomObjects(room);
+    for (var i = 0; i < list.length; i++)
     {
-        var o = S.objects[i];
+        var o = list[i];
         var b = BUILD[o.type];
         if (!b || !b[field])
         {
@@ -4904,9 +5620,32 @@ function floorKey(x, y)
     return x + ',' + y;
 }
 
-function floorAt(x, y)
+// painted floor is stored per room. the key is only "x,y", so one shared map
+// could not tell the main hall's (5,5) from the annex's - hence one map each.
+function roomFloors(r)
 {
-    var id = S.floorTiles ? S.floorTiles[floorKey(x, y)] : null;
+    if (r === undefined)
+    {
+        r = curRoom();
+    }
+    if (!S.rooms)
+    {
+        S.rooms = [];
+    }
+    if (!S.rooms[r])
+    {
+        S.rooms[r] = { floorTiles: {} };
+    }
+    if (!S.rooms[r].floorTiles)
+    {
+        S.rooms[r].floorTiles = {};
+    }
+    return S.rooms[r].floorTiles;
+}
+
+function floorAt(x, y, room)
+{
+    var id = roomFloors(room)[floorKey(x, y)];
     return id ? FLOORS[id] : null;
 }
 
@@ -4915,7 +5654,7 @@ function floorAt(x, y)
 // be floored once and buildings rearranged on top without leaving holes.
 function canPaintFloor(x, y)
 {
-    return x >= 0 && y >= 0 && x < usableW() && y < MAP_H;
+    return inVenue(x, y);
 }
 
 function paintFloor(x, y, id)
@@ -4925,16 +5664,17 @@ function paintFloor(x, y, id)
         return false;
     }
     var key = floorKey(x, y);
+    var tiles = roomFloors();
     if (id === 'erase')
     {
-        if (!S.floorTiles[key])
+        if (!tiles[key])
         {
             return false;
         }
-        delete S.floorTiles[key];
+        delete tiles[key];
         return true;
     }
-    if (S.floorTiles[key] === id)
+    if (tiles[key] === id)
     {
         return false;
     }
@@ -4944,22 +5684,40 @@ function paintFloor(x, y, id)
         return false;
     }
     S.money -= f.cost;
-    S.floorTiles[key] = id;
+    tiles[key] = id;
     return true;
 }
 
+// upkeep is billed for the whole venue, not just the room being looked at
 function floorMaintTotal()
 {
     var sum = 0;
-    for (var k in S.floorTiles)
+    for (var r = 0; r < roomsOpen(); r++)
     {
-        var f = FLOORS[S.floorTiles[k]];
-        if (f)
+        var tiles = roomFloors(r);
+        for (var k in tiles)
         {
-            sum += f.maint;
+            var f = FLOORS[tiles[k]];
+            if (f)
+            {
+                sum += f.maint;
+            }
         }
     }
     return sum;
+}
+
+// how many tiles are painted across every room. the "paint N tiles" request
+// counts the whole venue, so splitting the storage per room must not make the
+// target harder to reach than it was before rooms existed.
+function floorTileCount()
+{
+    var n = 0;
+    for (var r = 0; r < roomsOpen(); r++)
+    {
+        n += Object.keys(roomFloors(r)).length;
+    }
+    return n;
 }
 
 // effective footprint in tiles (width/height swap when rotated 90 degrees)
@@ -4992,47 +5750,67 @@ function canRotate(type)
     return b.w !== b.h;
 }
 
+// rebuild the grid for every unlocked room. doing only the room on screen was
+// enough while visitors could not leave it; once each room runs its own crowd,
+// a visitor in the annex would otherwise be pathing around the main hall's
+// walls and buildings.
 function rebuildGrid()
 {
-    walkGrid = [];
-    for (var y = 0; y < MAP_H; y++)
+    walkGrids = [];
+    for (var r = 0; r < roomsOpen(); r++)
     {
-        var row = [];
-        for (var x = 0; x < MAP_W; x++)
+        var grid = [];
+        for (var y = 0; y < MAP_H; y++)
         {
-            row.push(x < usableW());
-        }
-        walkGrid.push(row);
-    }
-    for (var i = 0; i < S.objects.length; i++)
-    {
-        var o = S.objects[i];
-        var ow = oW(o);
-        var oh = oH(o);
-        for (var dy = 0; dy < oh; dy++)
-        {
-            for (var dx = 0; dx < ow; dx++)
+            var row = [];
+            for (var x = 0; x < MAP_W; x++)
             {
-                walkGrid[o.y + dy][o.x + dx] = false;
+                row.push(inVenue(x, y, r));
+            }
+            grid.push(row);
+        }
+        var list = roomObjects(r);
+        for (var i = 0; i < list.length; i++)
+        {
+            var o = list[i];
+            var ow = oW(o);
+            var oh = oH(o);
+            for (var dy = 0; dy < oh; dy++)
+            {
+                for (var dx = 0; dx < ow; dx++)
+                {
+                    grid[o.y + dy][o.x + dx] = false;
+                }
             }
         }
+        walkGrids.push(grid);
     }
 }
 
-function isWalkable(x, y)
+function isWalkable(x, y, room)
 {
     if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H)
     {
         return false;
     }
-    return walkGrid[y][x];
+    if (room === undefined)
+    {
+        room = curRoom();
+    }
+    var grid = walkGrids[room];
+    if (!grid)
+    {
+        return false;
+    }
+    return grid[y][x];
 }
 
-function objectAt(x, y)
+function objectAt(x, y, room)
 {
-    for (var i = 0; i < S.objects.length; i++)
+    var list = roomObjects(room);
+    for (var i = 0; i < list.length; i++)
     {
-        var o = S.objects[i];
+        var o = list[i];
         if (x >= o.x && x < o.x + oW(o) && y >= o.y && y < o.y + oH(o))
         {
             return o;
@@ -5046,16 +5824,18 @@ function placeError(type, x, y, rot)
 {
     var fw = ftW(type, rot);
     var fh = ftH(type, rot);
-    if (x < 0 || y < 0 || x + fw > usableW() || y + fh > MAP_H)
-    {
-        return '부지 밖에는 지을 수 없습니다';
-    }
     for (var dy = 0; dy < fh; dy++)
     {
         for (var dx = 0; dx < fw; dx++)
         {
             var tx = x + dx;
             var ty = y + dy;
+            // every tile of the footprint has to sit inside the outline, which
+            // is no longer just "left of the usable width"
+            if (!inVenue(tx, ty))
+            {
+                return '부지 밖에는 지을 수 없습니다';
+            }
             if (objectAt(tx, ty))
             {
                 return '이미 다른 시설이 있습니다';
@@ -5080,7 +5860,9 @@ function placeError(type, x, y, rot)
     {
         return '입구를 막을 수 없습니다';
     }
-    var all = S.objects.slice();
+    // reachability is a per-room question: only this room's buildings can be
+    // cut off by this room's walls
+    var all = roomObjects();
     all.push({ type: type, x: x, y: y, rot: rot });
     for (var i = 0; i < all.length; i++)
     {
@@ -5092,9 +5874,9 @@ function placeError(type, x, y, rot)
     return null;
 }
 
-function bfsRegion(sx, sy, extraBlocked)
+function bfsRegion(sx, sy, extraBlocked, room)
 {
-    if (!isWalkable(sx, sy) || extraBlocked[sx + ',' + sy])
+    if (!isWalkable(sx, sy, room) || extraBlocked[sx + ',' + sy])
     {
         return null;
     }
@@ -5110,7 +5892,7 @@ function bfsRegion(sx, sy, extraBlocked)
             var nx = cur[0] + dirs[d][0];
             var ny = cur[1] + dirs[d][1];
             var key = nx + ',' + ny;
-            if (seen[key] || !isWalkable(nx, ny) || extraBlocked[key])
+            if (seen[key] || !isWalkable(nx, ny, room) || extraBlocked[key])
             {
                 continue;
             }
@@ -5173,7 +5955,7 @@ function placeObject(type, x, y, rot)
         return null;
     }
     S.money -= b.cost;
-    var o = { id: objIdSeq++, type: type, x: x, y: y, lv: 1, rot: rot };
+    var o = { id: objIdSeq++, type: type, x: x, y: y, lv: 1, rot: rot, room: curRoom() };
     if (b.kind === 'tank')
     {
         o.species = null;
@@ -5207,6 +5989,10 @@ function commitMove(x, y, rot)
     o.x = x;
     o.y = y;
     o.rot = rot;
+    // placement was validated against the room on screen, so that is where it
+    // lands. the room switcher is hidden while a placement is in progress
+    // (updateRoomBar), so the room cannot have changed underneath this.
+    o.room = curRoom();
     S.objects.push(o);
     rebuildGrid();
     repathAll();
@@ -5278,11 +6064,12 @@ function tankAppealParts(o)
     var lv = S.spLv[o.species] || 1;
     parts.spLv = lv;
     parts.sp = sp.pop * (1 + 0.25 * (lv - 1));
-    // aura from decorations within 2 tiles (capped at +8)
+    // aura from decorations within 2 tiles of it, in the same room (capped at +8)
     var aura = 0;
-    for (var i = 0; i < S.objects.length; i++)
+    var near = roomObjects(objRoom(o));
+    for (var i = 0; i < near.length; i++)
     {
-        var f = S.objects[i];
+        var f = near[i];
         var fb = BUILD[f.type];
         if (!fb.aura)
         {
@@ -5322,13 +6109,14 @@ function tankAppeal(o)
     return tankAppealParts(o).total;
 }
 
-// neighbor cat zones within distance 2, excluding self
+// neighbor cat zones within distance 2 in the same room, excluding self
 function catNeighbors(o)
 {
     var out = [];
-    for (var i = 0; i < S.objects.length; i++)
+    var list = roomObjects(objRoom(o));
+    for (var i = 0; i < list.length; i++)
     {
-        var n = S.objects[i];
+        var n = list[i];
         if (n === o || BUILD[n.type].kind !== 'tank' || !n.species)
         {
             continue;
@@ -5370,7 +6158,7 @@ function catCompatMult(o)
 // ---------- pathfinding ----------
 // dirOrder: optional per-visitor direction preference so different
 // visitors take different corridors between the same two points
-function findPath(sx, sy, tx, ty, dirOrder)
+function findPath(sx, sy, tx, ty, dirOrder, room)
 {
     if (sx === tx && sy === ty)
     {
@@ -5390,7 +6178,7 @@ function findPath(sx, sy, tx, ty, dirOrder)
             var nx = cur[0] + dirs[d][0];
             var ny = cur[1] + dirs[d][1];
             var key = nx + ',' + ny;
-            if (seen[key] || !isWalkable(nx, ny))
+            if (seen[key] || !isWalkable(nx, ny, room))
             {
                 continue;
             }
@@ -5423,11 +6211,12 @@ function findPath(sx, sy, tx, ty, dirOrder)
     return path;
 }
 
-// standable tiles adjacent to an object
+// standable tiles adjacent to an object, judged in the room it stands in
 function standTiles(o)
 {
     var ow = oW(o);
     var oh = oH(o);
+    var r = objRoom(o);
     var out = [];
     for (var dy = 0; dy < oh; dy++)
     {
@@ -5436,7 +6225,7 @@ function standTiles(o)
             var pts = [[o.x + dx + 1, o.y + dy], [o.x + dx - 1, o.y + dy], [o.x + dx, o.y + dy + 1], [o.x + dx, o.y + dy - 1]];
             for (var p = 0; p < 4; p++)
             {
-                if (isWalkable(pts[p][0], pts[p][1]))
+                if (isWalkable(pts[p][0], pts[p][1], r))
                 {
                     out.push({ x: pts[p][0], y: pts[p][1] });
                 }
@@ -5489,13 +6278,17 @@ function checkCombos()
             var anchor = anchors[a];
             var used = [anchor];
             var ok = true;
+            // a spot has to form inside ONE room. searching every room would let
+            // buildings in the annex combo with buildings in the main hall just
+            // because their coordinates happen to land near each other.
+            var pool = roomObjects(objRoom(anchor));
             for (var r = 1; r < combo.req.length; r++)
             {
                 var req = combo.req[r];
                 var found = null;
-                for (var i = 0; i < S.objects.length; i++)
+                for (var i = 0; i < pool.length; i++)
                 {
-                    var o = S.objects[i];
+                    var o = pool[i];
                     if (used.indexOf(o) >= 0 || !objMatchesReq(o, req))
                     {
                         continue;
@@ -5593,7 +6386,25 @@ function addDust(o)
 }
 
 // ---------- visitors ----------
-// concurrent visitor cap grows with fame and grade
+// how many visitors are currently touring one room
+function roomVisitorCount(r)
+{
+    var n = 0;
+    for (var i = 0; i < VISITORS.length; i++)
+    {
+        if ((VISITORS[i].room || 0) === r)
+        {
+            n++;
+        }
+    }
+    return n;
+}
+
+// concurrent visitor cap grows with fame and grade.
+// this is a PER-ROOM ceiling, not a venue-wide one. a venue-wide cap split
+// between rooms would make every room look emptier the moment the annex opens,
+// which is the opposite of what adding it is for. only the room on screen is
+// ever drawn, so the number of sprites on screen is unchanged.
 function maxVisitorsNow()
 {
     var m = 11 + Math.floor(S.fame / 16) + S.level * 3 + buffAdd('cap');
@@ -5627,9 +6438,13 @@ function shuffledDirs()
     return dirs;
 }
 
-function spawnVisitor()
+function spawnVisitor(room)
 {
-    if (VISITORS.length >= maxVisitorsNow())
+    if (room === undefined)
+    {
+        room = curRoom();
+    }
+    if (roomVisitorCount(room) >= maxVisitorsNow())
     {
         return;
     }
@@ -5652,10 +6467,12 @@ function spawnVisitor()
     {
         money = S.fee + 100;
     }
+    var door = roomDef(room).entrance;
     var v = {
         vt: vt,
-        x: (ENTRANCE.x + 0.5) * TS,
-        y: (ENTRANCE.y + 0.5) * TS + 10,
+        room: room,
+        x: (door.x + 0.5) * TS,
+        y: (door.y + 0.5) * TS + 10,
         dir: 'up',
         moving: false,
         animFrame: 0,
@@ -5696,12 +6513,13 @@ function needDecayRates()
     return { hunger: 100 / 75, thirst: 100 / 60, toilet: 100 / 90, energy: 100 / 110 };
 }
 
-function facilityForNeed(need)
+function facilityForNeed(need, room)
 {
     var best = null;
-    for (var i = 0; i < S.objects.length; i++)
+    var list = roomObjects(room);
+    for (var i = 0; i < list.length; i++)
     {
-        var o = S.objects[i];
+        var o = list[i];
         var b = BUILD[o.type];
         if (b.need === need || (need === 'energy' && b.rest))
         {
@@ -5722,9 +6540,11 @@ function pickTank(v)
 {
     var cands = [];
     var total = 0;
-    for (var i = 0; i < S.objects.length; i++)
+    // a visitor can only walk to exhibits in the room they are standing in
+    var list = roomObjects(v.room || 0);
+    for (var i = 0; i < list.length; i++)
     {
-        var o = S.objects[i];
+        var o = list[i];
         var b = BUILD[o.type];
         if (b.kind !== 'tank' || !o.species || v.viewed.indexOf(o.id) >= 0)
         {
@@ -5756,6 +6576,11 @@ function pickTank(v)
 
 function goToObject(v, o, nextState)
 {
+    // a visitor can never walk to a building in another room
+    if (objRoom(o) !== (v.room || 0))
+    {
+        return false;
+    }
     var tiles = standTiles(o);
     if (tiles.length === 0)
     {
@@ -5771,7 +6596,7 @@ function goToObject(v, o, nextState)
     });
     for (var i = 0; i < tiles.length; i++)
     {
-        var path = findPath(vt.x, vt.y, tiles[i].x, tiles[i].y, v.dirs);
+        var path = findPath(vt.x, vt.y, tiles[i].x, tiles[i].y, v.dirs, v.room || 0);
         if (path !== null)
         {
             v.path = path;
@@ -5787,15 +6612,16 @@ function goToObject(v, o, nextState)
 function goToRandomTile(v)
 {
     var vt = { x: Math.floor(v.x / TS), y: Math.floor(v.y / TS) };
+    var vr = v.room || 0;
     for (var tries = 0; tries < 8; tries++)
     {
         var tx = Math.floor(Math.random() * usableW());
         var ty = Math.floor(Math.random() * (MAP_H - 1));
-        if (!isWalkable(tx, ty) || (tx === vt.x && ty === vt.y))
+        if (!isWalkable(tx, ty, vr) || (tx === vt.x && ty === vt.y))
         {
             continue;
         }
-        var path = findPath(vt.x, vt.y, tx, ty, v.dirs);
+        var path = findPath(vt.x, vt.y, tx, ty, v.dirs, vr);
         if (path !== null)
         {
             v.path = path;
@@ -5828,7 +6654,7 @@ function visitorDecide(v)
         var need = needs[n];
         if (v.needs[need] >= 58)
         {
-            var fac = facilityForNeed(need);
+            var fac = facilityForNeed(need, v.room || 0);
             if (fac && goToObject(v, fac, 'use'))
             {
                 return;
@@ -5849,11 +6675,12 @@ function visitorDecide(v)
         if (!v.giftDone && v.money >= 250)
         {
             var gift = null;
-            for (var i = 0; i < S.objects.length; i++)
+            var shops = roomObjects(v.room || 0);
+            for (var i = 0; i < shops.length; i++)
             {
-                if (S.objects[i].type === 'gift')
+                if (shops[i].type === 'gift')
                 {
-                    gift = S.objects[i];
+                    gift = shops[i];
                     break;
                 }
             }
@@ -5879,9 +6706,10 @@ function visitorDecide(v)
     if (!v.photoDone && Math.random() < 0.18)
     {
         var funs = [];
-        for (var p = 0; p < S.objects.length; p++)
+        var here = roomObjects(v.room || 0);
+        for (var p = 0; p < here.length; p++)
         {
-            var fp = S.objects[p];
+            var fp = here[p];
             if (fp.type === 'photo' || BUILD[fp.type].fun)
             {
                 funs.push(fp);
@@ -5919,7 +6747,11 @@ function visitorDecide(v)
 function leaveMap(v)
 {
     var vt = { x: Math.floor(v.x / TS), y: Math.floor(v.y / TS) };
-    var path = findPath(vt.x, vt.y, ENTRANCE.x, ENTRANCE.y, v.dirs);
+    // they leave through the door of the room they came in by, which is not
+    // necessarily the room on screen
+    var vr = v.room || 0;
+    var exit = roomDef(vr).entrance;
+    var path = findPath(vt.x, vt.y, exit.x, exit.y, v.dirs, vr);
     if (path === null)
     {
         v.state = 'gone';
@@ -6042,7 +6874,7 @@ function updateVisitor(v, dt)
         var dy = py - v.y;
         var dist = Math.sqrt(dx * dx + dy * dy);
         // floor tile under the visitor speeds them up and can pay out
-        var fl = floorAt(Math.floor(v.x / TS), Math.floor(v.y / TS));
+        var fl = floorAt(Math.floor(v.x / TS), Math.floor(v.y / TS), v.room || 0);
         var floorSpeed = 1;
         if (fl)
         {
@@ -6089,7 +6921,7 @@ function updateVisitor(v, dt)
                 var nn = v.path[0];
                 var nx = (nn[0] !== undefined ? nn[0] : nn.x);
                 var ny = (nn[1] !== undefined ? nn[1] : nn.y);
-                if (!isWalkable(nx, ny))
+                if (!isWalkable(nx, ny, v.room || 0))
                 {
                     v.path = null;
                     v.state = 'decide';
@@ -6138,7 +6970,7 @@ function updateVisitor(v, dt)
             if (Math.random() < 0.3 + sp.rpY * 0.02)
             {
                 // decorations near the exhibit boost what it yields
-                var decoRp = 1 + decoAuraAt(obj2.x, obj2.y, 'auraRp') / 100;
+                var decoRp = 1 + decoAuraAt(obj2.x, obj2.y, 'auraRp', objRoom(obj2)) / 100;
                 var gain = Math.round(Math.max(1, Math.ceil(sp.rpY / 3)) * (v.vt.rpMul || 1) * buffMul('rp') * decoRp);
                 S.rp += gain;
                 addFloat(v.x, v.y - 26, '+' + gain + ' ' + THEME.text.rpWord, '#d0a0ff');
@@ -6187,7 +7019,7 @@ function updateVisitor(v, dt)
             {
                 var fb = BUILD[fo.type];
                 // decorations near the shop loosen the purse strings
-                var decoTip = 1 + decoAuraAt(fo.x, fo.y, 'auraTip') / 100;
+                var decoTip = 1 + decoAuraAt(fo.x, fo.y, 'auraTip', objRoom(fo)) / 100;
                 var price = Math.round(fb.sell * (v.vt.spendMul || 1) * buffMul('income') * decoTip);
                 if (fb.sell > 0 && v.money >= price)
                 {
@@ -6249,6 +7081,24 @@ function feeFactor()
         f = 1.25;
     }
     return f;
+}
+
+// extra footfall each room past the first brings in, and the ceiling on it.
+// scaling arrivals 1:1 with room count would DOUBLE income and halve the time
+// on every "N visitors" goal the moment the annex opens - too big a step for
+// one unlock, and it would quietly invalidate the balance of the whole late
+// game. 0.6 keeps the annex clearly worth building without doubling anything.
+var ROOM_TRAFFIC_SHARE = 0.6;
+var ROOM_TRAFFIC_CAP = 2.2;
+
+function roomTrafficMult()
+{
+    var m = 1 + (roomsOpen() - 1) * ROOM_TRAFFIC_SHARE;
+    if (m > ROOM_TRAFFIC_CAP)
+    {
+        m = ROOM_TRAFFIC_CAP;
+    }
+    return m;
 }
 
 function expectedPerDay()
@@ -6342,8 +7192,12 @@ function advanceSim(dtMs)
 
     if (S.opened)
     {
-        // paced spawning: accumulator plus a minimum gap between arrivals
-        S.spawnAcc += expectedPerDay() * (dtMs / DAY_MS);
+        // paced spawning: accumulator plus a minimum gap between arrivals.
+        // arrivals grow with the number of open rooms because each room has its
+        // own street door - otherwise opening the annex would halve the crowd
+        // in the main hall instead of adding to it. see roomTrafficMult() for
+        // why this is deliberately less than 1:1.
+        S.spawnAcc += expectedPerDay() * roomTrafficMult() * (dtMs / DAY_MS);
         S.spawnCd -= dt;
         // groupBurst is a countdown in seconds: a crowd streams in fast
         var bursting = (S.groupBurst > 0);
@@ -6356,16 +7210,29 @@ function advanceSim(dtMs)
             }
             S.spawnAcc += dt * 4;
         }
-        var accCap = bursting ? 8 : 4;
+        var accCap = (bursting ? 8 : 4) * roomTrafficMult();
         if (S.spawnAcc > accCap)
         {
             S.spawnAcc = accCap;
         }
-        if (S.spawnAcc >= 1 && S.spawnCd <= 0 && VISITORS.length < maxVisitorsNow())
+        if (S.spawnAcc >= 1 && S.spawnCd <= 0)
         {
-            S.spawnAcc -= 1;
-            S.spawnCd = bursting ? 0.15 : 0.4 + Math.random() * 0.5;
-            spawnVisitor();
+            // send the arrival to a room that still has space, picked at random
+            // so no room is starved when several are full
+            var open = [];
+            for (var rm = 0; rm < roomsOpen(); rm++)
+            {
+                if (roomVisitorCount(rm) < maxVisitorsNow())
+                {
+                    open.push(rm);
+                }
+            }
+            if (open.length > 0)
+            {
+                S.spawnAcc -= 1;
+                S.spawnCd = bursting ? 0.15 : (0.4 + Math.random() * 0.5) / roomTrafficMult();
+                spawnVisitor(open[Math.floor(Math.random() * open.length)]);
+            }
         }
 
         updateFeeding(dt);
@@ -6449,6 +7316,8 @@ function onDayTick()
 // neighboring cats sometimes squabble (bad match) or snuggle (good match)
 function catRelationEvents()
 {
+    // cats only squabble with cats they can actually see - same room only,
+    // even though moods are updated for every room at once
     var tanks = S.objects.filter(function (o) { return BUILD[o.type].kind === 'tank' && o.species; });
     for (var i = 0; i < tanks.length; i++)
     {
@@ -6456,6 +7325,10 @@ function catRelationEvents()
         {
             var a = tanks[i];
             var b = tanks[j];
+            if (objRoom(a) !== objRoom(b))
+            {
+                continue;
+            }
             var dist = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
             if (dist > 2)
             {
@@ -6537,6 +7410,7 @@ function checkQuest()
     var wasLast = (S.questIdx === chainLen - 1);
     S.questIdx++;
     sfx('quest');
+    var roomsGained = syncRoomUnlocks();
     var next = currentQuest();
     // finishing the hand-written chain is a one-time milestone worth marking
     var tail = wasLast
@@ -6546,6 +7420,28 @@ function checkQuest()
         title: '📌 목표 달성!',
         body: '<div style="text-align:center;"><b style="font-size:16px;color:#c07000;">「' + q.name + '」</b><br>완료!<br><br>' + parts.join('<br>') + tail + '</div>',
         buttons: [{ label: '좋아!', cls: '' }]
+    });
+    if (roomsGained > 0)
+    {
+        announceNewRoom(S.roomsOpen - 1);
+    }
+}
+
+// a whole new hall is a bigger moment than a normal goal reward, so it gets
+// its own modal after the goal one rather than a line buried inside it
+function announceNewRoom(r)
+{
+    var def = roomDef(r);
+    sfx('fanfare');
+    queueModal({
+        title: '🎉 새로운 공간!',
+        body: '<div style="text-align:center;"><div style="font-size:34px;">' + (def.icon || '🚪') + '</div>' +
+            '<b style="font-size:16px;color:#c07000;">「' + def.name + '」</b> 이(가) 열렸어요!<br><br>' +
+            '전시 공간이 <b>두 배 가까이</b> 넓어졌어요.<br>' +
+            '<span class="small">화면 오른쪽 위의 버튼으로 오갈 수 있어요.<br>' +
+            '두 곳 모두 손님이 따로 찾아옵니다 👥</span></div>',
+        buttons: [{ label: '보러 가기!', cls: 'blue', onClick: function () { switchRoom(r); } },
+            { label: '나중에', cls: 'gray' }]
     });
 }
 
@@ -6831,7 +7727,7 @@ function genRequest()
     }
     if (kind === 'floor')
     {
-        var fcur = Object.keys(S.floorTiles || {}).length;
+        var fcur = floorTileCount();
         var fneed = 12 + Math.floor(Math.random() * 9);
         r.target = fcur + fneed;
         r.desc = '바닥을 예쁘게 꾸며봐요! 바닥 타일을 ' + fneed + '칸 더 칠해봐요!';
@@ -6928,7 +7824,7 @@ function requestMet(r)
     }
     if (r.kind === 'floor')
     {
-        return Object.keys(S.floorTiles || {}).length >= r.target;
+        return floorTileCount() >= r.target;
     }
     if (r.kind === 'variety')
     {
@@ -6977,7 +7873,7 @@ function requestProgress(r)
     }
     if (r.kind === 'floor')
     {
-        return Math.min(Object.keys(S.floorTiles || {}).length, r.target) + '/' + r.target;
+        return Math.min(floorTileCount(), r.target) + '/' + r.target;
     }
     if (r.kind === 'variety')
     {
@@ -7270,8 +8166,10 @@ function updateFeeding(dt)
     if (feedCd <= 0)
     {
         feedCd = 25 + Math.random() * 20;
-        var tanks = S.objects.filter(function (o) { return BUILD[o.type].kind === 'tank' && o.species; });
-        if (tanks.length > 0 && VISITORS.length > 0)
+        // feeding time is something the player watches happen, so it has to be
+        // staged in the room they are looking at
+        var tanks = roomObjects().filter(function (o) { return BUILD[o.type].kind === 'tank' && o.species; });
+        if (tanks.length > 0 && roomVisitorCount(curRoom()) > 0)
         {
             var pick = tanks[Math.floor(Math.random() * tanks.length)];
             FEED = { objId: pick.id, t: 7 };
@@ -7398,11 +8296,13 @@ function playWithCat(o)
 }
 
 // ---------- show stage (aquarium feature) ----------
+// the performer for a show staged in the room on screen
 function firstShowSpecies()
 {
-    for (var i = 0; i < S.objects.length; i++)
+    var list = roomObjects();
+    for (var i = 0; i < list.length; i++)
     {
-        var o = S.objects[i];
+        var o = list[i];
         if (BUILD[o.type].kind === 'tank' && o.species && SPECIES[o.species].show)
         {
             return o.species;
@@ -7950,6 +8850,10 @@ function buyExpansion()
     S.money -= ex.cost;
     S.expansion++;
     rebuildGrid();
+    // landmarks are fixed so expanding should never strand anything, but the
+    // outline does change here - keep the safety net rather than trust that
+    rescueStrandedObjects();
+    repathAll();
     sfx('fanfare');
     showToast(ex.name + ' 완료! 부지가 넓어졌습니다');
 }
@@ -8888,7 +9792,8 @@ function showDiagnostics()
     {
         for (var x = 0; x < usableW(); x++)
         {
-            if (!objectAt(x, y) && !floorAt(x, y) && !(x === ENTRANCE.x && (y === ENTRANCE.y || y === ENTRANCE.y - 1)))
+            // must sample real venue floor, not a tile the outline carved away
+            if (inVenue(x, y) && !objectAt(x, y) && !floorAt(x, y) && !(x === ENTRANCE.x && (y === ENTRANCE.y || y === ENTRANCE.y - 1)))
             {
                 sx = x;
                 sy = y;
@@ -10098,7 +11003,10 @@ function updateHUD()
     $('hudRpIco').textContent = THEME.rpIcon;
     $('hudRp').textContent = fmt(S.rp) + 'P';
     $('hudFame').textContent = fmt(S.fame);
+    // the crowd count is the whole venue's, not just the room on screen -
+    // visitors in the annex are still your visitors
     $('hudVis').textContent = VISITORS.length + '명';
+    updateRoomBar();
     var seasonIcon = SEASONS[seasonOf(S.month)].icon;
     if (S.opened)
     {
@@ -10142,6 +11050,69 @@ function updateHUD()
         {
             qc.style.display = 'none';
         }
+    }
+}
+
+// ---------- room switcher ----------
+// switch which room is on screen. anything holding a reference to a building
+// in the old room has to be torn down first: a half-finished placement was
+// validated against the old grid, and the inspector is drawing an overlay on
+// a building that is about to stop being visible.
+function switchRoom(r)
+{
+    if (r === curRoom())
+    {
+        return;
+    }
+    // deliberately NOT guarded on modalShowing. nextModal runs a button's
+    // onClick before it closes the modal, so such a guard would kill the
+    // "go and see it" button on the new-room announcement. the player cannot
+    // reach the switcher during a modal anyway - updateRoomBar hides the bar.
+    cancelPlaceMode();
+    closePanel();
+    INSPECT = null;
+    if (!setRoom(r))
+    {
+        return;
+    }
+    sfx('click');
+    updateHUD();
+}
+
+// the bar is absent entirely while the venue is a single room, so nothing
+// about the screen changes for a player who has not unlocked the annex yet
+function updateRoomBar()
+{
+    var bar = $('roomBar');
+    if (!bar)
+    {
+        return;
+    }
+    if (roomsOpen() <= 1 || modalShowing || MODE.kind !== 'normal')
+    {
+        bar.style.display = 'none';
+        return;
+    }
+    bar.style.display = 'flex';
+    var want = roomsOpen() + ':' + curRoom();
+    if (bar.dataset.state === want)
+    {
+        return;
+    }
+    bar.dataset.state = want;
+    bar.innerHTML = '';
+    for (var r = 0; r < roomsOpen(); r++)
+    {
+        var def = roomDef(r);
+        var b = document.createElement('button');
+        b.className = 'roomBtn' + (r === curRoom() ? ' on' : '');
+        b.textContent = (def.icon ? def.icon + ' ' : '') + def.name;
+        b.dataset.room = r;
+        b.addEventListener('click', function (e)
+        {
+            switchRoom(parseInt(e.currentTarget.dataset.room, 10));
+        });
+        bar.appendChild(b);
     }
 }
 
@@ -10596,12 +11567,114 @@ function drawWall()
     ctx.textAlign = 'left';
 }
 
+// clip the drawing context to exactly the venue tiles, as horizontal runs so
+// the path stays small. lets the whole floor pass be drawn as before while
+// each theme's outline does the cutting.
+function clipToVenue()
+{
+    ctx.beginPath();
+    for (var y = 0; y < MAP_H; y++)
+    {
+        var runStart = -1;
+        for (var x = 0; x <= MAP_W; x++)
+        {
+            var inside = (x < MAP_W) && inVenue(x, y);
+            if (inside && runStart < 0)
+            {
+                runStart = x;
+            }
+            else
+            {
+                if (!inside && runStart >= 0)
+                {
+                    ctx.rect(runStart * TS, y * TS, (x - runStart) * TS, TS);
+                    runStart = -1;
+                }
+            }
+        }
+    }
+    ctx.clip();
+}
+
+// speckle the carved-away tiles so the landmark looks like rock / stone /
+// timber instead of a flat void. deterministic per tile, no per-frame noise.
+function drawSurroundTexture(uw)
+{
+    ctx.fillStyle = THEME.surroundAccent || '#4a4038';
+    for (var y = 0; y < MAP_H; y++)
+    {
+        for (var x = 0; x < uw; x++)
+        {
+            if (inVenue(x, y))
+            {
+                continue;
+            }
+            var px = x * TS;
+            var py = y * TS;
+            for (var k = 0; k < 5; k++)
+            {
+                var hx = (x * 37 + y * 17 + k * 53) % (TS - 6);
+                var hy = (x * 23 + y * 41 + k * 29) % (TS - 6);
+                ctx.fillRect(px + 3 + hx, py + 3 + hy, 3, 2);
+            }
+        }
+    }
+}
+
+// a dark rim along the outline so the venue reads as a building with a shape
+// rather than a floor that just stops
+function drawVenueEdge()
+{
+    for (var y = 0; y < MAP_H; y++)
+    {
+        for (var x = 0; x < MAP_W; x++)
+        {
+            if (!inVenue(x, y))
+            {
+                continue;
+            }
+            var px = x * TS;
+            var py = y * TS;
+            ctx.fillStyle = 'rgba(20,12,8,0.55)';
+            if (!inVenue(x, y - 1))
+            {
+                ctx.fillRect(px, py, TS, 3);
+            }
+            if (!inVenue(x, y + 1))
+            {
+                ctx.fillRect(px, py + TS - 3, TS, 3);
+            }
+            if (!inVenue(x - 1, y))
+            {
+                ctx.fillRect(px, py, 3, TS);
+            }
+            if (!inVenue(x + 1, y))
+            {
+                ctx.fillRect(px + TS - 3, py, 3, TS);
+            }
+            // warm top lip where the floor meets the outside edge
+            ctx.fillStyle = 'rgba(255,236,200,0.22)';
+            if (!inVenue(x, y - 1))
+            {
+                ctx.fillRect(px, py + 3, TS, 1);
+            }
+        }
+    }
+}
+
 function renderGround()
 {
     var uw = usableW();
     var style = THEME.floorStyle;
     var x;
     var y;
+    // surround colour shows through wherever the outline carves the box away,
+    // giving the mid-floor landmark a themed material of its own
+    ctx.fillStyle = THEME.surroundColor || '#2b2320';
+    ctx.fillRect(0, 0, uw * TS, MAP_H * TS);
+    drawSurroundTexture(uw);
+    ctx.save();
+    clipToVenue();
     for (y = 0; y < MAP_H; y++)
     {
         for (x = 0; x < uw; x++)
@@ -10709,17 +11782,21 @@ function renderGround()
     ctx.fillStyle = haze;
     ctx.fillRect(0, 0, uw * TS, TS * 3.5);
 
-    // painted floor tiles sit above the base floor
-    for (var fk in S.floorTiles)
+    // painted floor tiles sit above the base floor - this room's only
+    var painted = roomFloors();
+    for (var fk in painted)
     {
         var parts = fk.split(',');
         var fx = parseInt(parts[0], 10);
         var fy = parseInt(parts[1], 10);
         if (fx < uw && fy < MAP_H)
         {
-            drawFloorTile(ctx, S.floorTiles[fk], fx * TS, fy * TS);
+            drawFloorTile(ctx, painted[fk], fx * TS, fy * TS);
         }
     }
+
+    ctx.restore();
+    drawVenueEdge();
 
     // locked expansion zone: construction site
     if (uw < MAP_W)
@@ -10861,7 +11938,8 @@ function drawRangeOverlay()
     }
     else
     {
-        if (INSPECT && S.objects.indexOf(INSPECT) >= 0)
+        // the range overlay only makes sense while its building is on screen
+        if (INSPECT && S.objects.indexOf(INSPECT) >= 0 && objRoom(INSPECT) === curRoom())
         {
             type = INSPECT.type;
             x = INSPECT.x;
@@ -10910,17 +11988,23 @@ function renderWorld()
     renderGround();
     drawRangeOverlay();
 
-    // build sortable draw list
+    // build sortable draw list - only the room on screen
     var items = [];
-    for (var i = 0; i < S.objects.length; i++)
+    var drawList = roomObjects();
+    for (var i = 0; i < drawList.length; i++)
     {
-        var o = S.objects[i];
+        var o = drawList[i];
         // sort on the ground contact edge so taller bodies correctly
         // overlap whatever stands behind them (rotation-aware)
         items.push({ sy: (o.y + oH(o)) * TS, obj: o });
     }
     for (var v = 0; v < VISITORS.length; v++)
     {
+        // crowds in the other rooms keep touring, they are just not on screen
+        if ((VISITORS[v].room || 0) !== curRoom())
+        {
+            continue;
+        }
         items.push({ sy: VISITORS[v].y + 6, vis: VISITORS[v] });
     }
     items.sort(function (a, b2) { return a.sy - b2.sy; });
@@ -11174,9 +12258,10 @@ function drawPointLights()
     var strength = 0.20 + night * 0.55 + dusk * 0.22;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (var i = 0; i < S.objects.length; i++)
+    var lit = roomObjects();
+    for (var i = 0; i < lit.length; i++)
     {
-        var o = S.objects[i];
+        var o = lit[i];
         var lt = LIGHT_TYPES[o.type];
         if (!lt)
         {
@@ -11197,9 +12282,9 @@ function drawPointLights()
         ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
     }
     // tanks / cases / cat zones also glow softly as exhibit volumes
-    for (var j = 0; j < S.objects.length; j++)
+    for (var j = 0; j < lit.length; j++)
     {
-        var to = S.objects[j];
+        var to = lit[j];
         var tb = BUILD[to.type];
         if (tb.kind !== 'tank' || !to.species)
         {
@@ -11247,9 +12332,10 @@ function drawAmbientLight()
         ctx.fillStyle = 'rgba(18,28,66,' + (0.34 * night).toFixed(3) + ')';
         ctx.fillRect(0, 0, mw, mh);
         // exhibits glow softly in the dark
-        for (var i = 0; i < S.objects.length; i++)
+        var glowing = roomObjects();
+        for (var i = 0; i < glowing.length; i++)
         {
-            var o = S.objects[i];
+            var o = glowing[i];
             var b = BUILD[o.type];
             if (b.kind !== 'tank' || !o.species)
             {
