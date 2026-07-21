@@ -346,6 +346,66 @@ html, body
     display: none;
 }
 
+/* the trophy shelf opens from the launcher (z-index 110) as well as from
+   inside a game, so it needs its own host above both */
+#trophyHost
+{
+    position: absolute;
+    inset: 0;
+    z-index: 200;
+    display: none;
+}
+
+#trophyHost.on
+{
+    display: block;
+}
+
+#trophyHost .tBack
+{
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 30, 45, 0.55);
+}
+
+.tRow
+{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 9px;
+    margin-bottom: 6px;
+    background: #fffdf2;
+    border: 2px solid #d8b98a;
+    border-radius: 10px;
+}
+
+.tRow.locked
+{
+    opacity: 0.55;
+    background: #efe7d6;
+}
+
+.tRow .tIco
+{
+    font-size: 22px;
+    width: 28px;
+    text-align: center;
+    flex: 0 0 auto;
+}
+
+.tRow.locked .tIco
+{
+    filter: grayscale(1);
+}
+
+.tGroup
+{
+    margin: 12px 2px 6px;
+    font-weight: bold;
+    color: #6a4a1a;
+}
+
 .modal
 {
     position: absolute;
@@ -770,8 +830,10 @@ input[type="range"]
         <h1 id="launcherTitle">스토리 박스</h1>
         <div class="subtitle" id="launcherSub">🎁 하고 싶은 게임을 골라줘!</div>
         <div id="gameCards"></div>
+        <button class="btn" id="btnTrophy">🏆 트로피</button>
         <div class="launcherFoot" id="launcherFoot">세상에 하나뿐인 게임 3종 세트</div>
     </div>
+    <div id="trophyHost"></div>
 </div>
 
 <script>
@@ -782,7 +844,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '4.1';
+var GAME_VER = '4.2';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 58;        // back wall height above the map (world px)
@@ -799,6 +861,13 @@ var COMBO_RANGE = 4;    // chebyshev distance between combo member objects
 
 // theme-selected globals, assigned by loadTheme()
 var THEME = null;
+// thousands separator, kept here so data-side goal text has no load-order
+// dependency on ui.js (which defines the identical fmt used by the UI)
+function fmtNum(n)
+{
+    return String(Math.floor(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 var BUILD = null;
 var BUILD_ORDER_TANK = null;
 var BUILD_ORDER_FAC = null;
@@ -1037,6 +1106,67 @@ function makeQuests(theme, cfg)
         { name: SP[cfg.sp4].name + ' 전시하기', desc: cfg.sp4Hint, reward: { g: 10000, fame: 30 }, check: function (S) { return qDisplayed(S, cfg.sp4); }, prog: null },
         { name: SP[cfg.spLegend].name + ' 전시하기', desc: '전설의 전시로 대미를 장식하자!', reward: { g: 20000, fame: 50 }, check: function (S) { return qDisplayed(S, cfg.spLegend); }, prog: null }
     ];
+}
+
+// ---------- endless goals ----------
+// once the hand-written chain runs out the goal chip would sit empty forever,
+// so goals keep coming. they are derived from the index alone - no randomness,
+// no extra save data - because a quest carries check()/prog() functions and
+// only questIdx is ever written to the save file.
+// only uncapped metrics are used, so the ladder can never dead-end.
+var ENDLESS_KINDS = [
+    {
+        key: 'vis', base: 3000, step: 2600,
+        name: function (t) { return '손님 ' + fmtNum(t) + '명 맞이하기'; },
+        desc: '더 많은 손님을 불러모으자!',
+        check: function (S, t) { return S.visTotal >= t; },
+        prog: function (S, t) { return fmtNum(Math.min(S.visTotal, t)) + '/' + fmtNum(t); }
+    },
+    {
+        key: 'fame', base: 900, step: 460,
+        name: function (t) { return '인기 ' + fmtNum(t) + ' 달성'; },
+        desc: '전국이 알아주는 명소로!',
+        check: function (S, t) { return S.fame >= t; },
+        prog: function (S, t) { return fmtNum(Math.min(S.fame, t)) + '/' + fmtNum(t); }
+    },
+    {
+        key: 'money', base: 60000, step: 55000,
+        name: function (t) { return '자금 ' + fmtNum(t) + 'G 모으기'; },
+        desc: '든든하게 곳간을 채워보자!',
+        check: function (S, t) { return S.money >= t; },
+        prog: function (S, t) { return fmtNum(Math.min(Math.round(S.money), t)) + '/' + fmtNum(t); }
+    },
+    {
+        key: 'year', base: 8, step: 3,
+        name: function (t) { return t + '년차까지 운영하기'; },
+        desc: '오래오래 사랑받는 곳으로!',
+        check: function (S, t) { return S.year >= t; },
+        prog: function (S, t) { return S.year + '/' + t + '년차'; }
+    }
+];
+
+// build endless goal number n (0-based) - deterministic
+function endlessQuest(n)
+{
+    var k = ENDLESS_KINDS[n % ENDLESS_KINDS.length];
+    var cycle = Math.floor(n / ENDLESS_KINDS.length);
+    var target = k.base + k.step * cycle;
+    // rewards grow with the ladder so late goals stay worth chasing
+    var mul = 1 + cycle * 0.6;
+    return {
+        endless: true,
+        idx: n,
+        name: k.name(target),
+        desc: k.desc,
+        reward: {
+            g: Math.round((3000 + cycle * 1800) * 1),
+            rp: Math.round(60 * mul),
+            fame: Math.round(20 * mul),
+            deco: (n % 3 === 2) ? true : false
+        },
+        check: function (S) { return k.check(S, target); },
+        prog: function (S) { return k.prog(S, target); }
+    };
 }
 
 var LEVEL_GATES = [
@@ -1822,6 +1952,152 @@ THEME_CAT.facOrder = THEME_CAT.facOrder.concat(['special1', 'special2', 'special
 
 // --- permanent buffs granted by requests ---
 // applied through buffMul()/buffAdd() in game.js
+// ---------- trophies ----------
+// trophies live in their own shared storage key, NOT in a game save, because
+// the whole point is that some of them span all three games. each game writes
+// a small summary of itself into the store and trophies are judged on that.
+var TROPHY_GAMES = [
+    { id: 'aqua', label: '🐠 아쿠아리움' },
+    { id: 'museum', label: '🦖 박물관' },
+    { id: 'cat', label: '🐱 냥카페' }
+];
+
+// one game's summary, with safe defaults for a game never played
+function tStat(st, gameId)
+{
+    var s = (st && st.stats) ? st.stats[gameId] : null;
+    return s || { opened: false, level: 0, fame: 0, visTotal: 0, rank: 99, rank1: false, dex: false, quests: 0, chain: 0, combos: 0, year: 1, decos: 0 };
+}
+
+// does every game satisfy fn?
+function tAll(st, fn)
+{
+    for (var i = 0; i < TROPHY_GAMES.length; i++)
+    {
+        if (!fn(tStat(st, TROPHY_GAMES[i].id)))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+// sum one numeric field across all three games
+function tSum(st, field)
+{
+    var n = 0;
+    for (var i = 0; i < TROPHY_GAMES.length; i++)
+    {
+        n += tStat(st, TROPHY_GAMES[i].id)[field] || 0;
+    }
+    return n;
+}
+
+// the biggest value of one field across all three games
+function tMax(st, field)
+{
+    var n = 0;
+    for (var i = 0; i < TROPHY_GAMES.length; i++)
+    {
+        var v = tStat(st, TROPHY_GAMES[i].id)[field] || 0;
+        if (v > n)
+        {
+            n = v;
+        }
+    }
+    return n;
+}
+
+var TROPHIES = [];
+
+// per-game trophies: the same nine goals for each of the three games
+(function ()
+{
+    var perGame = [
+        { key: 'open',   icon: '🎉', name: '개장!',           desc: '가게 문을 열었다',                 ok: function (s) { return s.opened; } },
+        { key: 'lv3',    icon: '⭐', name: '★3 달성',         desc: '등급 ★3까지 승급했다',             ok: function (s) { return s.level >= 3; } },
+        { key: 'lv5',    icon: '🌟', name: '★5 달성',         desc: '최고 등급 ★5에 올랐다',            ok: function (s) { return s.level >= 5; } },
+        { key: 'fame500',icon: '💗', name: '인기 500',        desc: '인기 500을 넘겼다',                ok: function (s) { return s.fame >= 500; } },
+        { key: 'vis2000',icon: '👥', name: '손님 2,000명',    desc: '누적 손님 2,000명을 모았다',       ok: function (s) { return s.visTotal >= 2000; } },
+        { key: 'rank1',  icon: '🏆', name: '전국 1위',        desc: '전국 랭킹 1위를 찍었다',           ok: function (s) { return s.rank1; } },
+        { key: 'dex',    icon: '📖', name: '도감 완성',       desc: '전시물 24종을 모두 모았다',        ok: function (s) { return s.dex; } },
+        { key: 'combo10',icon: '🔍', name: '비밀 스폿 10개',  desc: '숨겨진 스폿을 10개 찾아냈다',      ok: function (s) { return s.combos >= 10; } },
+        { key: 'chain',  icon: '📌', name: '목표 완주',       desc: '기본 목표 21개를 전부 달성했다',   ok: function (s) { return s.chain > 0 && s.quests >= s.chain; } }
+    ];
+    for (var g = 0; g < TROPHY_GAMES.length; g++)
+    {
+        for (var p = 0; p < perGame.length; p++)
+        {
+            (function (game, def)
+            {
+                TROPHIES.push({
+                    id: game.id + '_' + def.key,
+                    game: game.id,
+                    group: game.label,
+                    icon: def.icon,
+                    name: def.name,
+                    desc: def.desc,
+                    check: function (st) { return def.ok(tStat(st, game.id)); }
+                });
+            })(TROPHY_GAMES[g], perGame[p]);
+        }
+    }
+})();
+
+// cross-game trophies: the reason Story Box is a set and not three apps
+TROPHIES.push(
+    { id: 'all_open',  group: '💝 3게임 통합', icon: '🎁', name: '스토리 박스 개봉', desc: '세 게임을 모두 개장했다',           check: function (st) { return tAll(st, function (s) { return s.opened; }); } },
+    { id: 'all_lv3',   group: '💝 3게임 통합', icon: '✨', name: '삼색 별',         desc: '세 게임 모두 ★3 이상',              check: function (st) { return tAll(st, function (s) { return s.level >= 3; }); } },
+    { id: 'all_lv5',   group: '💝 3게임 통합', icon: '👑', name: '삼관왕',          desc: '세 게임 모두 최고 등급 ★5',         check: function (st) { return tAll(st, function (s) { return s.level >= 5; }); } },
+    { id: 'all_rank1', group: '💝 3게임 통합', icon: '🏅', name: '전국 제패',       desc: '세 게임 모두 전국 1위를 찍었다',    check: function (st) { return tAll(st, function (s) { return s.rank1; }); } },
+    { id: 'all_dex',   group: '💝 3게임 통합', icon: '📚', name: '완전한 도감',     desc: '세 게임 도감을 모두 완성했다',      check: function (st) { return tAll(st, function (s) { return s.dex; }); } },
+    { id: 'all_chain', group: '💝 3게임 통합', icon: '🎯', name: '목표 정복자',     desc: '세 게임 기본 목표를 모두 완주했다', check: function (st) { return tAll(st, function (s) { return s.chain > 0 && s.quests >= s.chain; }); } },
+    { id: 'sum_vis1',  group: '💝 3게임 통합', icon: '🚶', name: '손님 10,000명',   desc: '세 게임 합쳐 손님 10,000명',        check: function (st) { return tSum(st, 'visTotal') >= 10000; } },
+    { id: 'sum_vis2',  group: '💝 3게임 통합', icon: '🎊', name: '손님 50,000명',   desc: '세 게임 합쳐 손님 50,000명',        check: function (st) { return tSum(st, 'visTotal') >= 50000; } },
+    { id: 'deco_all',  group: '💝 3게임 통합', icon: '🎀', name: '장식품 수집가',   desc: '한 게임에서 장식품 10종을 모두 모았다', check: function (st) { return tMax(st, 'decos') >= DECO_ORDER.length; } }
+);
+
+// ---------- decorations ----------
+// collectible ornaments. they cannot be bought - they only arrive as rewards
+// from requests, endless goals and trophies, which is what makes them worth
+// chasing. placing one buffs the 2 tiles around it.
+//   aura    = exhibit appeal (shares the existing +8 cap with gardens/fountains)
+//   auraRp  = nearby exhibits yield more points, in percent
+//   auraTip = nearby shops sell for more, in percent
+var DECOS = {
+    trophy:   { name: '황금 트로피',     icon: '🏆', w: 1, h: 1, aura: 3,               c1: '#e8b830', c2: '#fff0b0', rare: false, desc: '반짝이는 우승 트로피. 주변 전시가 돋보인다' },
+    balloon:  { name: '무지개 풍선',     icon: '🎈', w: 1, h: 1, auraTip: 12,           c1: '#e05880', c2: '#ffd0e0', rare: false, desc: '알록달록 풍선. 손님 지갑이 열린다' },
+    lamp:     { name: '별빛 가로등',     icon: '💡', w: 1, h: 1, aura: 2,               c1: '#f0d060', c2: '#fff8d0', rare: false, desc: '은은한 불빛이 분위기를 살린다' },
+    clover:   { name: '네잎클로버',      icon: '🍀', w: 1, h: 1, auraRp: 15,            c1: '#48a038', c2: '#a8e090', rare: false, desc: '행운의 클로버. 연구가 잘 풀린다' },
+    planter:  { name: '미니 화단',       icon: '🌷', w: 1, h: 1, aura: 2,               c1: '#c05068', c2: '#f0b0c0', rare: false, desc: '작지만 화사한 화단' },
+    crystal:  { name: '반짝이는 수정',   icon: '💎', w: 1, h: 1, auraRp: 20,            c1: '#50a8d8', c2: '#c8ecff', rare: true,  desc: '신비한 수정. 영감이 샘솟는다' },
+    bell:     { name: '소원의 종',       icon: '🔔', w: 1, h: 1, aura: 4,               c1: '#c89030', c2: '#f0d890', rare: true,  desc: '울리면 소원이 이루어진다는 종' },
+    luckycat: { name: '황금 고양이상',   icon: '🐾', w: 1, h: 1, auraTip: 20,           c1: '#e0b040', c2: '#fff0c0', rare: true,  desc: '복을 부르는 황금 고양이. 장사가 잘된다' },
+    arch:     { name: '무지개 아치',     icon: '🌈', w: 2, h: 1, aura: 3, auraTip: 10,  c1: '#7080d8', c2: '#f0c0e0', rare: true,  desc: '손님들이 꼭 사진을 찍고 가는 아치' },
+    star:     { name: '별똥별 조형물',   icon: '⭐', w: 1, h: 1, auraRp: 25,            c1: '#e8c040', c2: '#fff4c0', rare: true,  desc: '소원을 빌면 연구가 술술 풀린다' }
+};
+
+var DECO_ORDER = ['trophy', 'balloon', 'lamp', 'clover', 'planter', 'crystal', 'bell', 'luckycat', 'arch', 'star'];
+
+// decorations are identical across all three games, so register them once per theme
+function registerDecos(theme)
+{
+    for (var i = 0; i < DECO_ORDER.length; i++)
+    {
+        var id = DECO_ORDER[i];
+        var d = DECOS[id];
+        theme.build[id] = {
+            kind: 'deco', name: d.name, desc: d.desc, icon: d.icon,
+            w: d.w, h: d.h, cost: 0, maint: 0, sell: 0, lvReq: 1,
+            aura: d.aura, auraRp: d.auraRp, auraTip: d.auraTip,
+            c1: d.c1, c2: d.c2, deco: true
+        };
+    }
+}
+registerDecos(THEME_AQUA);
+registerDecos(THEME_MUSEUM);
+registerDecos(THEME_CAT);
+
 var BUFFS = {
     rp:      { name: '연구 열정', icon: '🔬', desc: '연구 포인트 획득 <b>+30%</b>', step: 0.3 },
     income:  { name: '장사 수완', icon: '💰', desc: '매장 수입 <b>+25%</b>', step: 0.25 },
@@ -3161,11 +3437,72 @@ var FAC_COLORS = {
     photo:  { roof: '#6848a8', wall: '#c8bce0' }
 };
 
+// decorations all share one renderer: a lit pedestal with the item's emblem
+// floating above it. one function covers every ornament, so adding a new
+// decoration is a data change rather than new pixel art.
+function drawDeco(ctx, o, wx, wy, t)
+{
+    var b = BUILD[o.type];
+    var W = b.w * TS;
+    var H = b.h * TS;
+    var cx = wx + W / 2;
+    // the build-menu icon renders a fake object with no id, so default it
+    var oid = o.id || 0;
+    var bob = Math.sin(t * 1.6 + oid * 0.9) * 1.5;
+
+    // soft glow so the ornament reads as special against the floor
+    var g = ctx.createRadialGradient(cx, wy + H * 0.5, 1, cx, wy + H * 0.5, W * 0.7);
+    g.addColorStop(0, 'rgba(255,240,190,0.30)');
+    g.addColorStop(1, 'rgba(255,220,140,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(wx, wy, W, H);
+
+    // pedestal
+    var pw = W - 10;
+    var py = wy + H - 13;
+    ctx.fillStyle = b.c1 || '#c8a050';
+    roundRect(ctx, wx + 5, py, pw, 9, 3);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,245,210,0.40)';
+    ctx.fillRect(wx + 5, py, pw, 2);
+    ctx.fillStyle = 'rgba(20,12,8,0.30)';
+    ctx.fillRect(wx + 5, py + 7, pw, 2);
+    ctx.strokeStyle = 'rgba(70,45,20,0.75)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, wx + 5, py, pw, 9, 3);
+    ctx.stroke();
+
+    // accent band
+    ctx.fillStyle = b.c2 || '#ffe8a0';
+    ctx.fillRect(wx + 7, py + 3, pw - 4, 2);
+
+    // the emblem itself, gently bobbing
+    ctx.font = (W >= TS * 2 ? 20 : 16) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(b.icon || '🎀', cx, py - 3 + bob);
+    ctx.textAlign = 'left';
+
+    // sparkle
+    var sp = (t * 2 + oid) % 3;
+    if (sp < 1)
+    {
+        ctx.fillStyle = 'rgba(255,255,220,' + (0.85 - sp * 0.7) + ')';
+        ctx.fillRect(cx + W * 0.26, wy + 5 + sp * 3, 2, 2);
+    }
+}
+
 function drawFacility(ctx, o, wx, wy, t)
 {
     var b = BUILD[o.type];
     var W = b.w * TS;
     var H = b.h * TS;
+
+    if (b.kind === 'deco')
+    {
+        drawDeco(ctx, o, wx, wy, t);
+        return;
+    }
 
     if (o.type === 'bench')
     {
@@ -3736,7 +4073,9 @@ function objElevation(o)
     var e = ELEVATION[o.type];
     if (e === undefined)
     {
-        e = (BUILD[o.type].kind === 'tank') ? 18 : 20;
+        var k = BUILD[o.type].kind;
+        // ornaments sit low so they never hide the exhibits they buff
+        e = (k === 'tank') ? 18 : (k === 'deco' ? 12 : 20);
     }
     return e;
 }
@@ -4088,6 +4427,7 @@ function defaultState()
         floorTiles: {},
         buffs: {},
         requests: [],
+        decoOwned: {},
         reqSpecialDone: [],
         facUnlocked: [],
         reqTimer: 8,
@@ -4131,6 +4471,8 @@ function saveGame(silent)
     {
         S.saveTime = Date.now();
         localStorage.setItem(THEME.saveKey, JSON.stringify(S));
+        // keep the shared trophy shelf current even between day ticks
+        syncTrophies();
         if (!silent)
         {
             showToast('저장 완료!');
@@ -4192,6 +4534,10 @@ function loadGame()
         {
             S.buffs = {};
         }
+        if (!S.decoOwned)
+        {
+            S.decoOwned = {};
+        }
         // pre-rework saves have requests that were auto-tracked; treat any
         // request without the accept flag as already accepted so nothing stalls
         if (S.requests)
@@ -4246,6 +4592,207 @@ var walkGrid = null; // 2d array true=walkable
 function usableW()
 {
     return EXP_W[S.expansion];
+}
+
+// ---------- trophies (shared across all three games) ----------
+// kept in its own storage key so a trophy survives deleting one game's save,
+// and so cross-game trophies can see all three games at once
+var TROPHY_KEY = 'story_box_trophies_v1';
+
+function loadTrophyStore()
+{
+    var st = { stats: {}, got: [] };
+    try
+    {
+        var raw = localStorage.getItem(TROPHY_KEY);
+        if (raw)
+        {
+            var d = JSON.parse(raw);
+            if (d && typeof d === 'object')
+            {
+                st.stats = d.stats || {};
+                st.got = d.got || [];
+            }
+        }
+    }
+    catch (e)
+    {
+        // a corrupt trophy store must never block play - start fresh
+        st = { stats: {}, got: [] };
+    }
+    return st;
+}
+
+function saveTrophyStore(st)
+{
+    try
+    {
+        localStorage.setItem(TROPHY_KEY, JSON.stringify(st));
+        return true;
+    }
+    catch (e)
+    {
+        return false;
+    }
+}
+
+// how many distinct decorations the player owns in this save
+function decoTypesOwned()
+{
+    var n = 0;
+    for (var k in (S.decoOwned || {}))
+    {
+        if (S.decoOwned[k] > 0)
+        {
+            n++;
+        }
+    }
+    return n;
+}
+
+// write this game's summary into the shared store, then judge every trophy.
+// returns the list of trophies newly unlocked by this call.
+function syncTrophies()
+{
+    if (!S || !THEME)
+    {
+        return [];
+    }
+    var st = loadTrophyStore();
+    st.stats[THEME.id] = {
+        opened: !!S.opened,
+        level: S.level || 0,
+        fame: Math.floor(S.fame || 0),
+        visTotal: S.visTotal || 0,
+        rank: S.rank || 99,
+        rank1: !!S.rank1Done,
+        dex: !!S.dexDone,
+        quests: S.questIdx || 0,
+        chain: (THEME.quests || []).length,
+        combos: (S.combosDone || []).length,
+        year: S.year || 1,
+        decos: decoTypesOwned()
+    };
+    var fresh = [];
+    for (var i = 0; i < TROPHIES.length; i++)
+    {
+        var t = TROPHIES[i];
+        if (st.got.indexOf(t.id) < 0 && t.check(st))
+        {
+            st.got.push(t.id);
+            fresh.push(t);
+        }
+    }
+    saveTrophyStore(st);
+    return fresh;
+}
+
+// daily hook: sync and celebrate anything newly earned (one per day)
+function tickTrophies()
+{
+    var fresh = syncTrophies();
+    if (fresh.length === 0)
+    {
+        return;
+    }
+    var t = fresh[0];
+    sfx('fanfare');
+    queueModal({
+        title: '🏆 트로피 획득!',
+        body: '<div style="text-align:center;"><div style="font-size:34px;">' + t.icon + '</div>' +
+            '<b style="font-size:16px;color:#c07000;">「' + t.name + '」</b><br><span class="small">' + t.desc + '</span>' +
+            '<br><br><span class="small">게임 선택 화면의 🏆 트로피에서 볼 수 있어요</span></div>',
+        buttons: [{ label: '좋았어!', cls: '' }]
+    });
+}
+
+// ---------- decorations ----------
+// how many of this decoration are already standing in the venue
+function decoPlaced(id)
+{
+    var n = 0;
+    for (var i = 0; i < S.objects.length; i++)
+    {
+        if (S.objects[i].type === id)
+        {
+            n++;
+        }
+    }
+    return n;
+}
+
+// spare copies available to place right now
+function decoSpare(id)
+{
+    return ((S.decoOwned && S.decoOwned[id]) || 0) - decoPlaced(id);
+}
+
+function grantDeco(id)
+{
+    if (!DECOS[id])
+    {
+        return false;
+    }
+    if (!S.decoOwned)
+    {
+        S.decoOwned = {};
+    }
+    S.decoOwned[id] = (S.decoOwned[id] || 0) + 1;
+    return true;
+}
+
+// pick a decoration to hand out. common ones come first so the rare ones
+// still feel like a find; once everything is owned, duplicates are fine.
+function grantRandomDeco()
+{
+    var missing = [];
+    var missingCommon = [];
+    for (var i = 0; i < DECO_ORDER.length; i++)
+    {
+        var id = DECO_ORDER[i];
+        if (!S.decoOwned || !S.decoOwned[id])
+        {
+            missing.push(id);
+            if (!DECOS[id].rare)
+            {
+                missingCommon.push(id);
+            }
+        }
+    }
+    var pool = missing;
+    // 70% of the time prefer something common the player has not seen yet
+    if (missingCommon.length > 0 && Math.random() < 0.7)
+    {
+        pool = missingCommon;
+    }
+    if (pool.length === 0)
+    {
+        pool = DECO_ORDER; // everything owned - a duplicate to place elsewhere
+    }
+    var pick = pool[Math.floor(Math.random() * pool.length)];
+    grantDeco(pick);
+    return pick;
+}
+
+// summed decoration effect of one kind within 2 tiles of a spot
+function decoAuraAt(x, y, field)
+{
+    var n = 0;
+    for (var i = 0; i < S.objects.length; i++)
+    {
+        var o = S.objects[i];
+        var b = BUILD[o.type];
+        if (!b || !b[field])
+        {
+            continue;
+        }
+        var dist = Math.max(Math.abs(o.x - x), Math.abs(o.y - y));
+        if (dist <= 2)
+        {
+            n += b[field];
+        }
+    }
+    return n;
 }
 
 // ---------- permanent buffs (request rewards) ----------
@@ -4528,6 +5075,13 @@ function placeObject(type, x, y, rot)
         sfx('bad');
         return null;
     }
+    // decorations are not bought - you may only place ones you actually own
+    if (b.kind === 'deco' && decoSpare(type) <= 0)
+    {
+        showToast('가지고 있는 「' + b.name + '」을(를) 모두 배치했어요');
+        sfx('bad');
+        return null;
+    }
     if (S.money < b.cost)
     {
         showToast('자금이 부족합니다');
@@ -4544,7 +5098,10 @@ function placeObject(type, x, y, rot)
     rebuildGrid();
     repathAll();
     addDust(o);
-    addFloat((x + ftW(type, rot) / 2) * TS, y * TS, '-' + b.cost + 'G', '#ffb0a0');
+    if (b.cost > 0)
+    {
+        addFloat((x + ftW(type, rot) / 2) * TS, y * TS, '-' + b.cost + 'G', '#ffb0a0');
+    }
     sfx('place');
     checkCombos();
     return o;
@@ -5493,7 +6050,9 @@ function updateVisitor(v, dt)
             // research gain (artists and scholars multiply it)
             if (Math.random() < 0.3 + sp.rpY * 0.02)
             {
-                var gain = Math.round(Math.max(1, Math.ceil(sp.rpY / 3)) * (v.vt.rpMul || 1) * buffMul('rp'));
+                // decorations near the exhibit boost what it yields
+                var decoRp = 1 + decoAuraAt(obj2.x, obj2.y, 'auraRp') / 100;
+                var gain = Math.round(Math.max(1, Math.ceil(sp.rpY / 3)) * (v.vt.rpMul || 1) * buffMul('rp') * decoRp);
                 S.rp += gain;
                 addFloat(v.x, v.y - 26, '+' + gain + ' ' + THEME.text.rpWord, '#d0a0ff');
             }
@@ -5540,7 +6099,9 @@ function updateVisitor(v, dt)
             if (fo)
             {
                 var fb = BUILD[fo.type];
-                var price = Math.round(fb.sell * (v.vt.spendMul || 1) * buffMul('income'));
+                // decorations near the shop loosen the purse strings
+                var decoTip = 1 + decoAuraAt(fo.x, fo.y, 'auraTip') / 100;
+                var price = Math.round(fb.sell * (v.vt.spendMul || 1) * buffMul('income') * decoTip);
                 if (fb.sell > 0 && v.money >= price)
                 {
                     v.money -= price;
@@ -5759,6 +6320,7 @@ function onDayTick()
 {
     tickRequests();
     tickJobUnlocks();
+    tickTrophies();
     if (S.showCd > 0)
     {
         S.showCd--;
@@ -5846,7 +6408,9 @@ function currentQuest()
     {
         S.questIdx = 0;
     }
-    return (S.questIdx < list.length) ? list[S.questIdx] : null;
+    // the chain is finite; past its end goals keep coming so the chip is
+    // never empty and there is always something to chase
+    return (S.questIdx < list.length) ? list[S.questIdx] : endlessQuest(S.questIdx - list.length);
 }
 
 function checkQuest()
@@ -5873,13 +6437,27 @@ function checkQuest()
         S.fame += r.fame;
         parts.push('💗 인기 +' + r.fame);
     }
+    // some endless goals hand out a decoration instead of plain cash
+    if (r.deco)
+    {
+        var got = grantRandomDeco();
+        if (got)
+        {
+            parts.push('🎀 장식품 「' + DECOS[got].name + '」');
+        }
+    }
+    var chainLen = (THEME.quests || []).length;
+    var wasLast = (S.questIdx === chainLen - 1);
     S.questIdx++;
     sfx('quest');
     var next = currentQuest();
+    // finishing the hand-written chain is a one-time milestone worth marking
+    var tail = wasLast
+        ? '<br><br><b style="color:#d04080;">모든 목표를 달성했다! 대단해!</b><br><span class="small">이제부터는 끝없는 목표가 계속 도착해요 📌</span>'
+        : (next ? '<br><br><span class="small">다음 목표: ' + next.name + '</span>' : '');
     queueModal({
         title: '📌 목표 달성!',
-        body: '<div style="text-align:center;"><b style="font-size:16px;color:#c07000;">「' + q.name + '」</b><br>완료!<br><br>' + parts.join('<br>') +
-            (next ? '<br><br><span class="small">다음 목표: ' + next.name + '</span>' : '<br><br><b style="color:#d04080;">모든 목표를 달성했다! 대단해!</b>') + '</div>',
+        body: '<div style="text-align:center;"><b style="font-size:16px;color:#c07000;">「' + q.name + '」</b><br>완료!<br><br>' + parts.join('<br>') + tail + '</div>',
         buttons: [{ label: '좋아!', cls: '' }]
     });
 }
@@ -6196,6 +6774,11 @@ function genRequest()
         r.desc = '전국에 이름을 알려봐요! 전국 순위 ' + r.target + '위 안에 들어봐요!';
         r.reward = { g: 2600, rp: 60, fame: 12 };
     }
+    // the harder asks sometimes pay out a decoration on top of the cash
+    if (r.reward && ['combo', 'lvup', 'rank', 'variety', 'feature'].indexOf(kind) >= 0 && Math.random() < 0.45)
+    {
+        r.reward.deco = true;
+    }
     r.id = S.reqSeq++;
     r.accepted = false;
     r.limit = REQ_LIMIT[r.kind] || 60;
@@ -6354,6 +6937,16 @@ function completeRequest(r)
         S.fame += rw.fame;
         parts.push('💗 인기 +' + rw.fame);
     }
+    var decoTxt = '';
+    if (rw.deco)
+    {
+        var gotId = grantRandomDeco();
+        if (gotId)
+        {
+            var gd = DECOS[gotId];
+            decoTxt = '<div style="margin-top:8px;background:#ffeef6;border:2px solid #e090b0;border-radius:8px;padding:8px;text-align:center;">🎀 장식품 획득!<br><span style="font-size:22px;">' + gd.icon + '</span><br><b style="color:#c04070;">「' + gd.name + '」</b><br><span class="small">건설 → 장식 탭에서 배치할 수 있어요</span></div>';
+        }
+    }
     var facTxt = '';
     if (r.rewardFac && S.facUnlocked.indexOf(r.rewardFac) < 0)
     {
@@ -6370,7 +6963,7 @@ function completeRequest(r)
     sfx('quest');
     queueModal({
         title: '📋 의뢰 달성!',
-        body: '<div style="text-align:center;">「' + jobName(r.poster) + '」의 의뢰를 해결했다!<br><span class="small">' + r.desc + '</span><br><br>' + parts.join(' · ') + (parts.length ? '<br>' : '') + '💗 인기 +5</div>' + facTxt,
+        body: '<div style="text-align:center;">「' + jobName(r.poster) + '」의 의뢰를 해결했다!<br><span class="small">' + r.desc + '</span><br><br>' + parts.join(' · ') + (parts.length ? '<br>' : '') + '💗 인기 +5</div>' + decoTxt + facTxt,
         buttons: [{ label: '좋았어!', cls: '' }]
     });
 }
@@ -7951,17 +8544,27 @@ function openBuildPanel(tab)
     var t3 = document.createElement('button');
     t3.className = 'tabBtn' + (tab === 'floor' ? ' on' : '');
     t3.textContent = '바닥';
+    var t4 = document.createElement('button');
+    t4.className = 'tabBtn' + (tab === 'deco' ? ' on' : '');
+    t4.textContent = '장식';
     t1.addEventListener('click', function () { sfx('click'); openBuildPanel('tank'); });
     t2.addEventListener('click', function () { sfx('click'); openBuildPanel('fac'); });
     t3.addEventListener('click', function () { sfx('click'); openBuildPanel('floor'); });
+    t4.addEventListener('click', function () { sfx('click'); openBuildPanel('deco'); });
     tabs.appendChild(t1);
     tabs.appendChild(t2);
     tabs.appendChild(t3);
+    tabs.appendChild(t4);
     sh.root.insertBefore(tabs, sh.body);
 
     if (tab === 'floor')
     {
         fillFloorTab(sh.body);
+        return;
+    }
+    if (tab === 'deco')
+    {
+        fillDecoTab(sh.body);
         return;
     }
 
@@ -8303,6 +8906,205 @@ function fillFloorTab(body)
             card.appendChild(act);
             body.appendChild(card);
         })(list[i]);
+    }
+}
+
+// ----- trophy shelf (shared across all three games) -----
+function closeTrophyPanel()
+{
+    var host = $('trophyHost');
+    host.className = '';
+    host.innerHTML = '';
+}
+
+function openTrophyPanel()
+{
+    // reading the store directly means the shelf is correct even on the
+    // launcher, where no game is loaded and S/THEME may be stale
+    var st = loadTrophyStore();
+    var got = st.got || [];
+    var host = $('trophyHost');
+    host.innerHTML = '';
+    host.className = 'on';
+
+    var back = document.createElement('div');
+    back.className = 'tBack';
+    back.addEventListener('click', function ()
+    {
+        sfx('click');
+        closeTrophyPanel();
+    });
+    host.appendChild(back);
+
+    var p = document.createElement('div');
+    p.className = 'panel';
+    var head = document.createElement('div');
+    head.className = 'panelHead';
+    var span = document.createElement('span');
+    span.textContent = '🏆 트로피 (' + got.length + '/' + TROPHIES.length + ')';
+    head.appendChild(span);
+    var x = document.createElement('button');
+    x.className = 'x';
+    x.textContent = '✕';
+    x.addEventListener('click', function ()
+    {
+        sfx('click');
+        closeTrophyPanel();
+    });
+    head.appendChild(x);
+    p.appendChild(head);
+
+    var body = document.createElement('div');
+    body.className = 'panelBody';
+
+    var intro = document.createElement('div');
+    intro.className = 'sub';
+    intro.style.margin = '2px 2px 6px';
+    intro.innerHTML = '세 게임에서 모은 트로피가 <b>한곳에</b> 모여요. ' +
+        '<b>💝 3게임 통합</b> 트로피는 세 게임을 모두 해야 받을 수 있어요!';
+    body.appendChild(intro);
+
+    // group the flat trophy list by its group label, preserving order
+    var order = [];
+    var byGroup = {};
+    for (var i = 0; i < TROPHIES.length; i++)
+    {
+        var t = TROPHIES[i];
+        if (!byGroup[t.group])
+        {
+            byGroup[t.group] = [];
+            order.push(t.group);
+        }
+        byGroup[t.group].push(t);
+    }
+    // cross-game group first: it is the reason the shelf exists
+    order.sort(function (a, b)
+    {
+        var ca = (a.indexOf('통합') >= 0) ? 0 : 1;
+        var cb = (b.indexOf('통합') >= 0) ? 0 : 1;
+        return ca - cb;
+    });
+
+    for (var g = 0; g < order.length; g++)
+    {
+        var list = byGroup[order[g]];
+        var have = 0;
+        for (var c = 0; c < list.length; c++)
+        {
+            if (got.indexOf(list[c].id) >= 0)
+            {
+                have++;
+            }
+        }
+        var gh = document.createElement('div');
+        gh.className = 'tGroup';
+        gh.textContent = order[g] + '  ' + have + '/' + list.length;
+        body.appendChild(gh);
+        for (var k = 0; k < list.length; k++)
+        {
+            var tr = list[k];
+            var unlocked = got.indexOf(tr.id) >= 0;
+            var row = document.createElement('div');
+            row.className = 'tRow' + (unlocked ? '' : ' locked');
+            row.innerHTML = '<div class="tIco">' + (unlocked ? tr.icon : '🔒') + '</div>' +
+                '<div class="mid"><div class="nm">' + (unlocked ? tr.name : '???') + '</div>' +
+                '<div class="sub">' + tr.desc + '</div></div>';
+            body.appendChild(row);
+        }
+    }
+
+    p.appendChild(body);
+    host.appendChild(p);
+}
+
+// ----- decoration tab -----
+// one line describing what a decoration does for its neighbours
+function decoEffectText(d)
+{
+    var t = [];
+    if (d.aura)
+    {
+        t.push('✨ 주변 ' + THEME.text.enclosureWord + ' 매력 <b>+' + d.aura + '</b>');
+    }
+    if (d.auraRp)
+    {
+        t.push(THEME.rpIcon + ' 주변 ' + THEME.text.rpWord + ' <b>+' + d.auraRp + '%</b>');
+    }
+    if (d.auraTip)
+    {
+        t.push('💰 주변 매장 매출 <b>+' + d.auraTip + '%</b>');
+    }
+    return t.join(' · ');
+}
+
+function fillDecoTab(body)
+{
+    var head = document.createElement('div');
+    head.className = 'card';
+    head.innerHTML = '<div class="mid"><div class="nm">🎀 장식품</div>' +
+        '<div class="sub">장식품은 <b>돈으로 살 수 없어요.</b> 의뢰·목표·트로피 보상으로 모으는 수집품이에요.<br>' +
+        '놓으면 <b>주변 2칸</b>에 효과를 줘요. 가진 개수만큼만 놓을 수 있어요.</div></div>';
+    body.appendChild(head);
+
+    var owned = 0;
+    for (var c = 0; c < DECO_ORDER.length; c++)
+    {
+        if ((S.decoOwned || {})[DECO_ORDER[c]])
+        {
+            owned++;
+        }
+    }
+    var cnt = document.createElement('div');
+    cnt.className = 'sub';
+    cnt.style.margin = '8px 2px';
+    cnt.innerHTML = '<b>수집 현황: ' + owned + '/' + DECO_ORDER.length + '종</b>';
+    body.appendChild(cnt);
+
+    for (var i = 0; i < DECO_ORDER.length; i++)
+    {
+        (function (id)
+        {
+            var d = DECOS[id];
+            var have = (S.decoOwned || {})[id] || 0;
+            var spare = decoSpare(id);
+            var card = document.createElement('div');
+            card.className = 'card' + (have ? '' : ' locked');
+            var mid = document.createElement('div');
+            mid.className = 'mid';
+            if (have)
+            {
+                mid.innerHTML = '<div class="nm">' + d.icon + ' ' + d.name +
+                    ' <span class="small">(' + d.w + '×' + d.h + ')</span>' +
+                    ' <span class="small">보유 ' + have + '개 · 놓을 수 있음 ' + spare + '개</span></div>' +
+                    '<div class="sub">' + d.desc + '</div>' +
+                    '<div class="sub">' + decoEffectText(d) + '</div>';
+            }
+            else
+            {
+                mid.innerHTML = '<div class="nm">❓ ??? <span class="small">(' + d.w + '×' + d.h + ')</span></div>' +
+                    '<div class="sub">아직 못 모은 장식품이에요' + (d.rare ? ' <b>(희귀)</b>' : '') + '</div>' +
+                    '<div class="sub">의뢰·목표를 달성하면 받을 수 있어요</div>';
+            }
+            card.appendChild(mid);
+            var act = document.createElement('div');
+            act.className = 'act';
+            var btn = document.createElement('button');
+            btn.className = 'btn blue';
+            btn.textContent = '놓기';
+            btn.disabled = spare <= 0;
+            btn.addEventListener('click', function ()
+            {
+                sfx('click');
+                MODE = { kind: 'place', build: id, ghost: null, armedTile: null, rot: false };
+                closePanel();
+                $('placeBar').style.display = 'flex';
+                $('btnPlaceRotate').style.display = canRotate(id) ? 'inline-block' : 'none';
+                setPlaceBarText(false);
+            });
+            act.appendChild(btn);
+            card.appendChild(act);
+            body.appendChild(card);
+        })(DECO_ORDER[i]);
     }
 }
 
@@ -8738,6 +9540,18 @@ function openMenuPanel()
         });
         row.appendChild(bClose);
     }
+
+    var bTrophy = document.createElement('button');
+    bTrophy.className = 'btn';
+    bTrophy.textContent = '🏆 트로피';
+    bTrophy.addEventListener('click', function ()
+    {
+        sfx('click');
+        syncTrophies();
+        closePanel();
+        openTrophyPanel();
+    });
+    row.appendChild(bTrophy);
 
     var bHelp = document.createElement('button');
     bHelp.className = 'btn';
@@ -10778,6 +11592,12 @@ function boot()
     {
         sfx('click');
         showLauncher();
+    });
+    document.getElementById('btnTrophy').addEventListener('click', function ()
+    {
+        initAudio();
+        sfx('click');
+        openTrophyPanel();
     });
 
     document.addEventListener('visibilitychange', function ()
