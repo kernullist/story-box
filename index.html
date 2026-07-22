@@ -879,7 +879,7 @@ input[type="range"]
 var OWNER_NAME = '은혜';
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '4.4';
+var GAME_VER = '4.5';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 58;        // back wall height above the map (world px)
@@ -8191,11 +8191,17 @@ function doFeed(o)
     var gain = 2 + (o.lv || 1);
     S.rp += gain;
     addFloat(cx, cy - 6, '+' + gain + ' ' + THEME.text.rpWord, '#d0a0ff');
-    // nearby visitors get excited
+    // nearby visitors get excited - only the ones in the same room. a visitor
+    // in the annex who happens to share these coordinates cannot see this.
+    var feedRoom = objRoom(o);
     var n = 0;
     for (var i = 0; i < VISITORS.length; i++)
     {
         var v = VISITORS[i];
+        if ((v.room || 0) !== feedRoom)
+        {
+            continue;
+        }
         var dx = Math.abs(v.x / TS - (o.x + owf / 2));
         var dy = Math.abs(v.y / TS - (o.y + ohf / 2));
         if (dx <= 3.5 && dy <= 3.5)
@@ -8336,12 +8342,19 @@ function startShow(stage)
     var sh = oH(stage);
     var cx = (stage.x + sw / 2) * TS;
     var cy = (stage.y + sh / 2) * TS;
-    // nearby visitors buy show tickets and love it
+    // nearby visitors buy show tickets and love it - same room only. without
+    // this the annex crowd is charged for a show they are nowhere near, which
+    // is both free money and money taken off visitors who saw nothing.
+    var showRoom = objRoom(stage);
     var n = 0;
     var income = 0;
     for (var i = 0; i < VISITORS.length; i++)
     {
         var v = VISITORS[i];
+        if ((v.room || 0) !== showRoom)
+        {
+            continue;
+        }
         var dx = Math.abs(v.x / TS - (stage.x + sw / 2));
         var dy = Math.abs(v.y / TS - (stage.y + sh / 2));
         if (dx <= 4.5 && dy <= 4.5)
@@ -10383,11 +10396,11 @@ function openInfoPanel()
                 var md = (o.mood === undefined) ? 80 : o.mood;
                 moodTxt = ' · 기분 ' + md + (md < 45 ? ' 😿' : '');
             }
-            html += '<div class="sub">' + BUILD[o.type].name + ' — ' + SPECIES[o.species].name + ' (매력 ' + Math.floor(tankAppeal(o)) + moodTxt + ')</div>';
+            html += '<div class="sub">' + roomTag(o) + BUILD[o.type].name + ' — ' + SPECIES[o.species].name + ' (매력 ' + Math.floor(tankAppeal(o)) + moodTxt + ')</div>';
         }
         else
         {
-            html += '<div class="sub bad">' + BUILD[o.type].name + ' — ' + THEME.text.emptyHint + '</div>';
+            html += '<div class="sub bad">' + roomTag(o) + BUILD[o.type].name + ' — ' + THEME.text.emptyHint + '</div>';
         }
     }
     html += '</div></div>';
@@ -11003,9 +11016,17 @@ function updateHUD()
     $('hudRpIco').textContent = THEME.rpIcon;
     $('hudRp').textContent = fmt(S.rp) + 'P';
     $('hudFame').textContent = fmt(S.fame);
-    // the crowd count is the whole venue's, not just the room on screen -
-    // visitors in the annex are still your visitors
-    $('hudVis').textContent = VISITORS.length + '명';
+    // once there is more than one room, a single venue-wide number contradicts
+    // what is on screen - you read "68명" and count 34 heads. show the room you
+    // are looking at first, with the venue total after it.
+    if (roomsOpen() > 1)
+    {
+        $('hudVis').textContent = roomVisitorCount(curRoom()) + ' / ' + VISITORS.length + '명';
+    }
+    else
+    {
+        $('hudVis').textContent = VISITORS.length + '명';
+    }
     updateRoomBar();
     var seasonIcon = SEASONS[seasonOf(S.month)].icon;
     if (S.opened)
@@ -11054,6 +11075,18 @@ function updateHUD()
 }
 
 // ---------- room switcher ----------
+// prefix for lists that mix rooms together (the info panel). silent while the
+// venue is one room, so nothing changes for a player without the annex.
+function roomTag(o)
+{
+    if (roomsOpen() <= 1)
+    {
+        return '';
+    }
+    var def = roomDef(objRoom(o));
+    return '<span class="small">[' + def.name + ']</span> ';
+}
+
 // switch which room is on screen. anything holding a reference to a building
 // in the old room has to be torn down first: a half-finished placement was
 // validated against the old grid, and the inspector is drawing an overlay on
@@ -11080,7 +11113,14 @@ function switchRoom(r)
 }
 
 // the bar is absent entirely while the venue is a single room, so nothing
-// about the screen changes for a player who has not unlocked the annex yet
+// about the screen changes for a player who has not unlocked the annex yet.
+// updateHUD runs this every frame, so it early-outs on a cached string rather
+// than touching the DOM each time - this is the iPad's frame budget.
+// the cache key MUST include the theme: this global outlives a trip back to
+// the launcher, and two games sharing a room count would otherwise leave the
+// previous game's room names sitting in the bar.
+var roomBarState = '';
+
 function updateRoomBar()
 {
     var bar = $('roomBar');
@@ -11088,18 +11128,19 @@ function updateRoomBar()
     {
         return;
     }
-    if (roomsOpen() <= 1 || modalShowing || MODE.kind !== 'normal')
+    var hide = (roomsOpen() <= 1 || modalShowing || MODE.kind !== 'normal');
+    var want = hide ? 'hidden' : (THEME.id + ':' + roomsOpen() + ':' + curRoom());
+    if (roomBarState === want)
+    {
+        return;
+    }
+    roomBarState = want;
+    if (hide)
     {
         bar.style.display = 'none';
         return;
     }
     bar.style.display = 'flex';
-    var want = roomsOpen() + ':' + curRoom();
-    if (bar.dataset.state === want)
-    {
-        return;
-    }
-    bar.dataset.state = want;
     bar.innerHTML = '';
     for (var r = 0; r < roomsOpen(); r++)
     {
