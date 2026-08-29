@@ -817,6 +817,108 @@ input[type="range"]
     touch-action: pan-x;
 }
 
+
+/* ---------- player name entry ---------- */
+/* one screen serves both jobs: the first-launch prompt (no cancel, cannot be
+   skipped) and a later rename (cancel shown). it sits above everything,
+   including the trophy shelf, so nothing can be tapped behind it. */
+#launcherBtns
+{
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+#nameSetup
+{
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 25%, #4fa3c7 0, #16506e 75%);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 210;
+    padding: 16px;
+}
+
+.nsCard
+{
+    width: min(360px, 92%);
+    padding: 18px 16px;
+    background: linear-gradient(#fff6dd, #f5e6bd);
+    border: 4px solid #7a4a1a;
+    border-radius: 18px;
+    box-shadow: 0 6px 0 #7a4a1a;
+    text-align: center;
+}
+
+.nsTitle
+{
+    font-size: 20px;
+    color: #5a3410;
+}
+
+.nsSub
+{
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #8a6a3a;
+}
+
+#nameInput
+{
+    display: block;
+    width: 100%;
+    margin: 12px 0 4px;
+    padding: 10px;
+    /* 16px+ keeps iOS from zooming the page when the field is focused */
+    font-family: inherit;
+    font-size: 20px;
+    font-weight: 800;
+    text-align: center;
+    color: #4a2c0c;
+    background: #fffdf4;
+    border: 3px solid #c9a25a;
+    border-radius: 12px;
+    outline: none;
+}
+
+#nameInput:focus
+{
+    border-color: #2f96e0;
+}
+
+.nsHint
+{
+    min-height: 16px;
+    font-size: 11px;
+    color: #a08050;
+}
+
+.nsHint.bad
+{
+    color: #d0402c;
+}
+
+.nsBtns
+{
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 12px;
+}
+
+.btn:disabled
+{
+    opacity: 0.45;
+    cursor: default;
+    box-shadow: none;
+    transform: none;
+}
+
 </style>
 </head>
 <body>
@@ -865,8 +967,24 @@ input[type="range"]
         <h1 id="launcherTitle">스토리 박스</h1>
         <div class="subtitle" id="launcherSub">🎁 하고 싶은 게임을 골라줘!</div>
         <div id="gameCards"></div>
-        <button class="btn" id="btnTrophy">🏆 트로피</button>
+        <div id="launcherBtns">
+            <button class="btn" id="btnTrophy">🏆 트로피</button>
+            <button class="btn gray" id="btnRename">✏️ 이름 바꾸기</button>
+        </div>
         <div class="launcherFoot" id="launcherFoot">세상에 하나뿐인 게임 3종 세트</div>
+    </div>
+    <div id="nameSetup">
+        <div class="nsCard">
+            <div class="nsTitle" id="nsTitle">🎁 이름을 알려줘!</div>
+            <div class="nsSub" id="nsSub">게임 안에서 이 이름으로 불러 줄게</div>
+            <input id="nameInput" class="selectable" type="text" maxlength="8"
+                placeholder="이름을 입력해줘" autocomplete="off" autocorrect="off" spellcheck="false">
+            <div class="nsHint" id="nsHint">한글 · 영문 8자까지</div>
+            <div class="nsBtns">
+                <button class="btn blue" id="btnNameOk">✨ 시작하기</button>
+                <button class="btn gray" id="btnNameCancel" style="display:none;">취소</button>
+            </div>
+        </div>
     </div>
     <div id="trophyHost"></div>
 </div>
@@ -875,11 +993,21 @@ input[type="range"]
 // Story Box - shared constants and per-theme game data
 // All comments ASCII only. UI strings are Korean by design.
 
-// the player this game was made for
-var OWNER_NAME = '은혜';
+// ---------- player name ----------
+// the name is typed in on first launch and kept per device, so it is NOT known
+// while this file is loading. every string that mentions the player is written
+// with the %N% token instead and materialized later by setOwnerName().
+//
+// do NOT concatenate OWNER_NAME into a string literal here: that would bake in
+// whatever the fallback happened to be at load time and never update again.
+// use the token; collectOwnerSlots() finds it wherever it sits.
+var OWNER_KEY = 'story_box_owner_v1';
+var OWNER_TOKEN = '%N%';
+var OWNER_MAX = 8;
+var OWNER_NAME = '주인공';      // fallback only - replaced by setOwnerName()
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '4.5';
+var GAME_VER = '4.6';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 58;        // back wall height above the map (world px)
@@ -1719,16 +1847,16 @@ var THEME_AQUA = {
         touchOKLabel: '터치풀 가능',
         selectHint: '넣고 싶은 어종을 선택하세요 (연구한 어종만 가능)',
         noSelectable: '이 수조에 넣을 수 있는 새 어종이 없습니다.<br>연구 메뉴에서 어종을 연구해 보세요!',
-        rank1: '🏆 대한민국 최고의 수족관이 되었습니다! 🏆<br>' + OWNER_NAME + ' 관장님, 당신이 해냈어요!',
+        rank1: '🏆 대한민국 최고의 수족관이 되었습니다! 🏆<br>%N% 관장님, 당신이 해냈어요!',
         rankingTitle: '전국 수족관 랭킹',
         promoTitle: '수족관 승급!',
         crisisHint: '유지비가 비싼 시설을 팔거나 입장료를 조정해 보세요',
         openNeed: '어종이 들어있는 수조가 최소 1개 필요해요!',
-        openBody: OWNER_NAME + ' 관장님, 수족관을 개장할까요?<br>개장하면 관람객이 들어오고<br>시간이 흐르기 시작해요!',
+        openBody: '%N% 관장님, 수족관을 개장할까요?<br>개장하면 관람객이 들어오고<br>시간이 흐르기 시작해요!',
         ownerTitle: '관장님'
     },
     tutorial: [
-        { title: '🐬 ' + OWNER_NAME + ' 관장님, 어서와요!', body: '<div style="text-align:center;"><b>' + OWNER_NAME + '</b>만의 수족관을 키워서<br><b>전국 랭킹 1위</b>를 노리는 게임이야!<br><br>지금은 <b>개장 준비중</b>!<br>수조와 시설을 느긋하게 준비한 뒤<br><b>🎉 개장하기</b> 버튼을 눌러 손님을 맞이하자.</div>' },
+        { title: '🐬 %N% 관장님, 어서와요!', body: '<div style="text-align:center;"><b>%N%</b>만의 수족관을 키워서<br><b>전국 랭킹 1위</b>를 노리는 게임이야!<br><br>지금은 <b>개장 준비중</b>!<br>수조와 시설을 느긋하게 준비한 뒤<br><b>🎉 개장하기</b> 버튼을 눌러 손님을 맞이하자.</div>' },
         { title: '📖 기본 조작', body: '<div>1️⃣ <b>건설</b> 버튼으로 수조와 매점을 지어요<br>2️⃣ 지은 <b>수조를 탭</b>하면 물고기를 넣을 수 있어요<br>3️⃣ 관람객이 구경하면 <b>연구P</b>가 모여요<br>4️⃣ 연구P로 <b>새로운 어종</b>을 연구해요<br>5️⃣ 화장실 · 벤치 · 매점이 없으면 관람객이 화나요!</div>' },
         { title: '🍴 먹이 시간!', body: '<div style="text-align:center;">가끔 수조 위에 <b>🍴 먹이 시간</b> 표시가 떠!<br>사라지기 전에 그 수조를 <b>탭</b>하면...<br><br>물고기들이 신나서 관람객 만족도 UP!<br>연구P 보너스까지! 놓치지 마!</div>' },
         { title: '✨ 비밀의 스폿', body: '<div style="text-align:center;">어울리는 시설을 <b>가까이</b> 지으면<br>특별한 <b>스폿</b>이 탄생해!<br><br><span class="small">예) 벤치 + 자판기 + 화장실 = ???</span><br><br>정보 메뉴에서 힌트를 볼 수 있어.<br>그럼, 멋진 수족관을 부탁해! 🐧</div>' }
@@ -1841,16 +1969,16 @@ var THEME_MUSEUM = {
         touchOKLabel: '체험 가능',
         selectHint: '전시하고 싶은 유물을 선택하세요 (발굴한 유물만 가능)',
         noSelectable: '이 전시대에 놓을 수 있는 새 유물이 없습니다.<br>발굴 메뉴에서 유물을 발굴해 보세요!',
-        rank1: '🏆 대한민국 최고의 박물관이 되었습니다! 🏆<br>' + OWNER_NAME + ' 관장님, 당신이 해냈어요!',
+        rank1: '🏆 대한민국 최고의 박물관이 되었습니다! 🏆<br>%N% 관장님, 당신이 해냈어요!',
         rankingTitle: '전국 박물관 랭킹',
         promoTitle: '박물관 승급!',
         crisisHint: '유지비가 비싼 시설을 팔거나 입장료를 조정해 보세요',
         openNeed: '유물이 전시된 전시대가 최소 1개 필요해요!',
-        openBody: OWNER_NAME + ' 관장님, 박물관을 개장할까요?<br>개장하면 관람객이 들어오고<br>시간이 흐르기 시작해요!',
+        openBody: '%N% 관장님, 박물관을 개장할까요?<br>개장하면 관람객이 들어오고<br>시간이 흐르기 시작해요!',
         ownerTitle: '관장님'
     },
     tutorial: [
-        { title: '🦖 ' + OWNER_NAME + ' 관장님, 어서와요!', body: '<div style="text-align:center;"><b>' + OWNER_NAME + '</b>만의 박물관을 키워서<br><b>전국 랭킹 1위</b>를 노리는 게임이야!<br><br>지금은 <b>개장 준비중</b>!<br>진열장과 시설을 느긋하게 준비한 뒤<br><b>🎉 개장하기</b> 버튼을 눌러 손님을 맞이하자.</div>' },
+        { title: '🦖 %N% 관장님, 어서와요!', body: '<div style="text-align:center;"><b>%N%</b>만의 박물관을 키워서<br><b>전국 랭킹 1위</b>를 노리는 게임이야!<br><br>지금은 <b>개장 준비중</b>!<br>진열장과 시설을 느긋하게 준비한 뒤<br><b>🎉 개장하기</b> 버튼을 눌러 손님을 맞이하자.</div>' },
         { title: '📖 기본 조작', body: '<div>1️⃣ <b>건설</b> 버튼으로 진열장과 매점을 지어요<br>2️⃣ 지은 <b>진열장을 탭</b>하면 유물을 전시할 수 있어요<br>3️⃣ 관람객이 구경하면 <b>발굴P</b>가 모여요<br>4️⃣ 발굴P로 <b>발굴대를 파견</b>해 새 유물을 얻어요<br>5️⃣ 화장실 · 벤치 · 매점이 없으면 관람객이 화나요!</div>' },
         { title: '🧭 발굴 탐험대!', body: '<div style="text-align:center;">이 게임의 유물은 <b>발굴대를 파견</b>해서 얻어!<br>발굴P를 들여 파견하면 며칠 뒤에 돌아오고<br>운이 좋으면 <b>보물</b>도 함께 발견한대!<br><br>관련 유물을 모아 전시하면<br><b>📜 기획전</b>도 열 수 있어 — 관람객이 몰려와!</div>' },
         { title: '✨ 비밀의 스폿', body: '<div style="text-align:center;">어울리는 전시를 <b>가까이</b> 두면<br>특별한 <b>스폿</b>이 탄생해!<br><br><span class="small">예) 트리케라톱스 + 익룡 = ???</span><br><br>정보 메뉴에서 힌트를 볼 수 있어.<br>그럼, 멋진 박물관을 부탁해! 🦕</div>' }
@@ -1963,16 +2091,16 @@ var THEME_CAT = {
         touchOKLabel: '쓰다듬기 가능',
         selectHint: '배치하고 싶은 냥이를 선택하세요 (입양한 냥이만 가능)',
         noSelectable: '이 자리에 둘 수 있는 새 냥이가 없습니다.<br>입양 메뉴에서 고양이를 입양해 보세요!',
-        rank1: '🏆 대한민국 최고의 냥카페가 되었습니다! 🏆<br>' + OWNER_NAME + ' 사장님, 당신이 해냈어요!',
+        rank1: '🏆 대한민국 최고의 냥카페가 되었습니다! 🏆<br>%N% 사장님, 당신이 해냈어요!',
         rankingTitle: '전국 냥카페 랭킹',
         promoTitle: '냥카페 승급!',
         crisisHint: '유지비가 비싼 시설을 팔거나 입장료를 조정해 보세요',
         openNeed: '고양이가 있는 자리가 최소 1개 필요해요!',
-        openBody: OWNER_NAME + ' 사장님, 냥카페를 개장할까요?<br>개장하면 손님이 들어오고<br>시간이 흐르기 시작해요!',
+        openBody: '%N% 사장님, 냥카페를 개장할까요?<br>개장하면 손님이 들어오고<br>시간이 흐르기 시작해요!',
         ownerTitle: '사장님'
     },
     tutorial: [
-        { title: '🐱 ' + OWNER_NAME + ' 사장님, 어서와요!', body: '<div style="text-align:center;"><b>' + OWNER_NAME + '</b>만의 고양이 카페를 키워서<br><b>전국 랭킹 1위</b>를 노리는 게임이야!<br><br>지금은 <b>개장 준비중</b>!<br>냥이 자리와 시설을 느긋하게 준비한 뒤<br><b>🎉 개장하기</b> 버튼을 눌러 손님을 맞이하자.</div>' },
+        { title: '🐱 %N% 사장님, 어서와요!', body: '<div style="text-align:center;"><b>%N%</b>만의 고양이 카페를 키워서<br><b>전국 랭킹 1위</b>를 노리는 게임이야!<br><br>지금은 <b>개장 준비중</b>!<br>냥이 자리와 시설을 느긋하게 준비한 뒤<br><b>🎉 개장하기</b> 버튼을 눌러 손님을 맞이하자.</div>' },
         { title: '📖 기본 조작', body: '<div>1️⃣ <b>건설</b> 버튼으로 방석과 간식 바를 지어요<br>2️⃣ 만든 <b>자리를 탭</b>하면 냥이를 배치할 수 있어요<br>3️⃣ 손님이 냥이를 구경하면 <b>간식P</b>가 모여요<br>4️⃣ 간식P로 <b>새로운 고양이</b>를 입양해요<br>5️⃣ 화장실 · 소파 · 간식 바가 없으면 손님이 화나요!</div>' },
         { title: '🪀 냥이 돌보기!', body: '<div style="text-align:center;">고양이들에게는 <b>기분</b>과 <b>성격</b>이 있어!<br>기분이 나쁘면 매력이 떨어져... 💤<br>자리를 <b>탭</b>해서 <b>놀아주기</b>로 기분 UP!<br><br>그리고 <b>궁합</b>이 좋은 냥이를 옆에 두면 매력 UP,<br>안 맞는 냥이끼리는 가끔 투닥거려! 💢</div>' },
         { title: '✨ 비밀의 스폿', body: '<div style="text-align:center;">어울리는 자리를 <b>가까이</b> 두면<br>특별한 <b>스폿</b>이 탄생해!<br><br><span class="small">예) 페르시안 + 소파 = ???</span><br><br>정보 메뉴에서 힌트를 볼 수 있어.<br>그럼, 멋진 냥카페를 부탁해! 🐾</div>' }
@@ -2008,9 +2136,9 @@ THEME_MUSEUM.specials = [
 ];
 
 // --- visitor cheers naming the owner ---
-THEME_AQUA.reviews.good.push(OWNER_NAME + ' 관장님 짱!', '여기 관장님이 ' + OWNER_NAME + '래!');
-THEME_MUSEUM.reviews.good.push(OWNER_NAME + ' 관장님 짱!', '관장님 안목 최고!');
-THEME_CAT.reviews.good.push(OWNER_NAME + ' 사장님 짱!', '사장님이 천사래...');
+THEME_AQUA.reviews.good.push('%N% 관장님 짱!', '여기 관장님이 %N%래!');
+THEME_MUSEUM.reviews.good.push('%N% 관장님 짱!', '관장님 안목 최고!');
+THEME_CAT.reviews.good.push('%N% 사장님 짱!', '사장님이 천사래...');
 
 // --- cat cafe: personalities ---
 var CAT_PERS = {
@@ -2086,19 +2214,19 @@ THEME_MUSEUM.specials.push({ id: 'adventure', name: '대모험전', members: ['p
 // as pools of brightness instead of washing out
 // HD-2D deep bases: lights and painted floors read as bright pools
 THEME_AQUA.wall = { top: '#061624', face: '#103248', trim: '#2a6a90' };
-THEME_AQUA.wallSign = OWNER_NAME + ' 아쿠아리움';
+THEME_AQUA.wallSign = '%N% 아쿠아리움';
 THEME_AQUA.floorStyle = 'tile';
 THEME_AQUA.floorA = '#2a4456';
 THEME_AQUA.floorB = '#243c4c';
 
 THEME_MUSEUM.wall = { top: '#1a1510', face: '#3a3024', trim: '#6a563c' };
-THEME_MUSEUM.wallSign = OWNER_NAME + ' 박물관';
+THEME_MUSEUM.wallSign = '%N% 박물관';
 THEME_MUSEUM.floorStyle = 'marble';
 THEME_MUSEUM.floorA = '#483f30';
 THEME_MUSEUM.floorB = '#40372a';
 
 THEME_CAT.wall = { top: '#24160a', face: '#46301c', trim: '#7a5230' };
-THEME_CAT.wallSign = OWNER_NAME + ' 냥카페';
+THEME_CAT.wallSign = '%N% 냥카페';
 THEME_CAT.floorStyle = 'wood';
 THEME_CAT.floorA = '#634228';
 THEME_CAT.floorB = '#583a22';
@@ -2756,6 +2884,150 @@ function loadTheme(id)
     REVIEWS_MID = t.reviews.mid;
     REVIEWS_BAD = t.reviews.bad;
 }
+
+
+// =====================================================================
+// player name plumbing
+// =====================================================================
+// the strings above are authored with %N% because the real name only exists at
+// runtime. everything here turns those templates into finished text, and can be
+// run again whenever the name changes.
+//
+// this WALKS the theme data instead of listing the fields by hand. a hand
+// written list goes stale the moment someone writes a new line that mentions
+// the player, and it fails quietly: one message keeps the old name and nobody
+// notices until the game is already in someone's hands.
+var ownerSlots = [];
+
+// visits every string in THEMES that still carries the token.
+// depth is capped rather than tracking visited nodes - the theme data is a
+// plain literal tree, and the cap keeps a future cross-link from hanging boot.
+function walkOwnerStrings(node, depth, fn)
+{
+    var k;
+    var v;
+    if (!node || depth > 12)
+    {
+        return;
+    }
+    for (k in node)
+    {
+        if (!Object.prototype.hasOwnProperty.call(node, k))
+        {
+            continue;
+        }
+        v = node[k];
+        if (typeof v === 'string')
+        {
+            if (v.indexOf(OWNER_TOKEN) >= 0)
+            {
+                fn(node, k, v);
+            }
+        }
+        else if (v && typeof v === 'object')
+        {
+            // arrays included: reviews.good holds token lines as elements
+            walkOwnerStrings(v, depth + 1, fn);
+        }
+    }
+}
+
+// records (owner object, key, original template) once. keeping the template is
+// what makes renaming repeatable - substituting in place would leave the first
+// name baked in and the second rename would find nothing to replace.
+function collectOwnerSlots()
+{
+    ownerSlots = [];
+    walkOwnerStrings(THEMES, 0, function (obj, key, tpl)
+    {
+        ownerSlots.push({ obj: obj, key: key, tpl: tpl });
+    });
+}
+
+function applyOwnerName()
+{
+    var i;
+    for (i = 0; i < ownerSlots.length; i++)
+    {
+        // split/join instead of replace(): a name is not a regex, and a plain
+        // replace() would only swap the first token anyway
+        ownerSlots[i].obj[ownerSlots[i].key] = ownerSlots[i].tpl.split(OWNER_TOKEN).join(OWNER_NAME);
+    }
+}
+
+// catches the one mistake this design can still make: a token string assigned
+// AFTER collectOwnerSlots() ran, which would show raw %N% on screen. loud on
+// purpose - the bug we are avoiding is the silent wrong-name one.
+function verifyOwnerTokens()
+{
+    var left = [];
+    walkOwnerStrings(THEMES, 0, function (obj, key)
+    {
+        left.push(key);
+    });
+    if (left.length > 0 && window.console)
+    {
+        console.warn('owner token not substituted: ' + left.join(', '));
+    }
+    return left.length;
+}
+
+// the name is stripped, not escaped. it lands inside a dozen innerHTML strings
+// and missing one escape breaks the markup; refusing the characters at the door
+// is a single rule in a single place. the length cap keeps the wall sign
+// ("<name> 아쿠아리움", drawn on the canvas) inside the venue.
+function sanitizeOwnerName(raw)
+{
+    var s = String(raw === null || raw === undefined ? '' : raw);
+    s = s.replace(/[<>&"'\\]/g, '');
+    s = s.replace(/\s+/g, ' ');
+    s = s.replace(/^ +| +$/g, '');
+    if (s.length > OWNER_MAX)
+    {
+        s = s.substring(0, OWNER_MAX);
+    }
+    return s;
+}
+
+// stored outside the per-game saves, like trophies: the name belongs to the
+// device and is shared by all three games. it is deliberately NOT part of a
+// save code - importing a friend's save must not rename your own game.
+function loadOwnerName()
+{
+    var raw = null;
+    try
+    {
+        raw = localStorage.getItem(OWNER_KEY);
+    }
+    catch (e)
+    {
+        raw = null;     // private browsing: play under the fallback name
+    }
+    return sanitizeOwnerName(raw);
+}
+
+function setOwnerName(name)
+{
+    var clean = sanitizeOwnerName(name);
+    if (!clean)
+    {
+        return false;
+    }
+    OWNER_NAME = clean;
+    applyOwnerName();
+    try
+    {
+        localStorage.setItem(OWNER_KEY, clean);
+    }
+    catch (e)
+    {
+        // storage blocked: the name still applies for this session
+    }
+    return true;
+}
+
+collectOwnerSlots();
+applyOwnerName();       // fallback text until boot() applies the stored name
 
 
 // Aquarium Story - pixel art sprites and drawing helpers
@@ -10484,6 +10756,17 @@ function openMenuPanel()
     });
     row.appendChild(bHd);
 
+    var bName = document.createElement('button');
+    bName.className = 'btn';
+    bName.textContent = '✏️ 이름 바꾸기';
+    bName.addEventListener('click', function ()
+    {
+        sfx('click');
+        closePanel();
+        showNameSetup('rename');
+    });
+    row.appendChild(bName);
+
     var bDiag = document.createElement('button');
     bDiag.className = 'btn';
     bDiag.textContent = '🔍 화면 진단';
@@ -10712,6 +10995,120 @@ function showImportModal()
             },
             { label: '취소', cls: 'gray' }
         ]
+    });
+}
+
+// ---------- player name ----------
+// one screen does both jobs:
+//   'first'  - shown before the launcher on a device that has no name yet.
+//              there is no cancel: the game has nothing to show until it knows
+//              who is playing.
+//   'rename' - opened from the launcher or the in-game menu, cancel returns.
+// it is a full overlay rather than a queueModal because the first-launch case
+// must not be dismissable, and a modal button always closes its modal.
+var namePrevPaused = false;
+var nameMode = 'first';
+var NAME_BAD_RE = /[<>&"'\\]/;
+
+function setNameHint(msg, bad)
+{
+    var el = $('nsHint');
+    el.textContent = msg || '한글 · 영문 8자까지';
+    el.className = 'nsHint' + (bad ? ' bad' : '');
+}
+
+function refreshNameOk()
+{
+    var raw = $('nameInput').value;
+    $('btnNameOk').disabled = (sanitizeOwnerName(raw).length === 0);
+    if (NAME_BAD_RE.test(raw))
+    {
+        setNameHint('< > & 같은 기호는 쓸 수 없어', true);
+    }
+    else
+    {
+        setNameHint('');
+    }
+}
+
+function showNameSetup(mode)
+{
+    nameMode = (mode === 'rename') ? 'rename' : 'first';
+    var first = (nameMode === 'first');
+    var input = $('nameInput');
+
+    $('nsTitle').textContent = first ? '🎁 이름을 알려줘!' : '✏️ 이름 바꾸기';
+    $('nsSub').innerHTML = first ?
+        '게임 안에서 이 이름으로 불러 줄게<br>나중에 언제든 바꿀 수 있어!' :
+        '바꾼 이름은 게임 3개에 바로 적용돼<br>저장해 둔 게임은 그대로야';
+    $('btnNameOk').textContent = first ? '✨ 시작하기' : '✅ 바꾸기';
+    $('btnNameCancel').style.display = first ? 'none' : 'inline-block';
+    // first launch starts empty on purpose: prefilling a name invites tapping
+    // straight past the one question this screen exists to ask
+    input.value = first ? '' : OWNER_NAME;
+    $('nameSetup').style.display = 'flex';
+    refreshNameOk();
+
+    // renaming can happen mid-game; do not let the sim tick behind the screen
+    namePrevPaused = PAUSED;
+    PAUSED = true;
+
+    try
+    {
+        input.focus();
+    }
+    catch (e)
+    {
+    }
+}
+
+function hideNameSetup()
+{
+    $('nameSetup').style.display = 'none';
+    PAUSED = namePrevPaused;
+}
+
+function confirmNameSetup()
+{
+    var first = (nameMode === 'first');
+    if (!setOwnerName($('nameInput').value))
+    {
+        setNameHint('이름을 한 글자 이상 적어줘!', true);
+        return;
+    }
+    sfx('click');
+    hideNameSetup();
+    if (first || $('launcher').style.display !== 'none')
+    {
+        // the launcher paints the name into three lines of text, so it has to
+        // be rebuilt. in game nothing needs poking: the wall sign is redrawn
+        // every frame and the rest of the text is read when it is shown.
+        showLauncher();
+    }
+    else
+    {
+        showToast('이제 ' + OWNER_NAME + '! 👋');
+    }
+}
+
+function bindNameSetup()
+{
+    var input = $('nameInput');
+    input.addEventListener('input', refreshNameOk);
+    input.addEventListener('keydown', function (e)
+    {
+        // the on-screen keyboard can sit over the buttons, so return confirms
+        if (e.key === 'Enter')
+        {
+            e.preventDefault();
+            confirmNameSetup();
+        }
+    });
+    $('btnNameOk').addEventListener('click', confirmNameSetup);
+    $('btnNameCancel').addEventListener('click', function ()
+    {
+        sfx('click');
+        hideNameSetup();
     });
 }
 
@@ -12847,6 +13244,14 @@ function boot()
         openTrophyPanel();
     });
 
+    document.getElementById('btnRename').addEventListener('click', function ()
+    {
+        initAudio();
+        sfx('click');
+        showNameSetup('rename');
+    });
+    bindNameSetup();
+
     document.addEventListener('visibilitychange', function ()
     {
         lastT = performance.now();
@@ -12859,7 +13264,24 @@ function boot()
     // any first tap anywhere unlocks/resumes audio (iOS requirement)
     document.addEventListener('pointerdown', audioUnlockTap, true);
 
-    showLauncher();
+    // the name is asked for once per device and is what every screen greets the
+    // player by, so it has to be settled before the launcher can draw itself
+    var owner = loadOwnerName();
+    if (owner)
+    {
+        setOwnerName(owner);
+        showLauncher();
+    }
+    else
+    {
+        showNameSetup('first');
+    }
+    // safety net for the %N% templates. every file has loaded by now, so any
+    // token string created after collectOwnerSlots() ran is still sitting there
+    // unsubstituted - warn in the console instead of letting it reach a screen.
+    // this is the one failure the token design can still produce, and it costs
+    // a single walk of THEMES to rule out.
+    verifyOwnerTokens();
     requestAnimationFrame(function (t)
     {
         lastT = t;
