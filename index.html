@@ -374,6 +374,64 @@ html, body
     font-weight: 800;
 }
 
+/* ---------- recipe workshop (v4.9) ---------- */
+.chipRow
+{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 6px 0;
+}
+
+.ingChip
+{
+    padding: 5px 9px;
+    font-size: 13px;
+    font-weight: 800;
+    font-family: inherit;
+    color: #5a3200;
+    background: #fff3d0;
+    border: 2px solid #c8a050;
+    border-radius: 14px;
+    cursor: pointer;
+}
+
+.ingChip.rare
+{
+    background: #f3e8ff;
+    border-color: #a080d0;
+}
+
+.ingChip.on
+{
+    background: #ffd76e;
+    border-color: #7a4a1a;
+    box-shadow: 0 0 0 2px #ffb43a;
+}
+
+.ingChip:disabled
+{
+    opacity: 0.4;
+}
+
+.potRow
+{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 14px;
+}
+
+.potSlot
+{
+    padding: 4px 8px;
+    background: #fff;
+    border: 2px dashed #b08a3a;
+    border-radius: 8px;
+}
+
 /* ---------- list cards ---------- */
 .card
 {
@@ -758,6 +816,98 @@ html, body
     border-color: #ffca5f;
 }
 
+/* ---------- photo album (v4.8) ---------- */
+#photoBtn
+{
+    position: absolute;
+    right: 10px;
+    bottom: 12px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 22px;
+    line-height: 40px;
+    background: rgba(20, 50, 70, 0.85);
+    border: 2px solid #ffca5f;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 25;
+}
+
+#photoBtn:active
+{
+    transform: translateY(2px);
+}
+
+.shutterFlash
+{
+    /* longhand, not inset: inset needs iOS 14.5+ and older iPads would get
+       a zero-size flash */
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background: #fff;
+    pointer-events: none;
+    z-index: 40;
+    animation: shutterFade 0.45s ease-out forwards;
+}
+
+@keyframes shutterFade
+{
+    from
+    {
+        opacity: 0.85;
+    }
+    to
+    {
+        opacity: 0;
+    }
+}
+
+.albumGrid
+{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+    padding: 6px 2px;
+}
+
+.albumCell
+{
+    padding: 4px;
+    background: #fff8e8;
+    border: 3px solid #b08a3a;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.albumCell img
+{
+    display: block;
+    width: 100%;
+    border-radius: 4px;
+}
+
+.albumCap
+{
+    margin-top: 3px;
+    font-size: 11px;
+    color: #6a4a10;
+}
+
+.albumBig
+{
+    /* long-press -> "save to Photos" on iPad needs the callout back */
+    -webkit-touch-callout: default;
+    max-width: 100%;
+    max-height: 55vh;
+    border: 3px solid #b08a3a;
+    border-radius: 8px;
+}
+
 /* ---------- grand opening button ---------- */
 #openBtn
 {
@@ -1044,6 +1194,7 @@ input[type="range"]
         <button id="openBtn">🎉 개장하기!</button>
         <button id="questChip" style="display:none;"></button>
         <div id="roomBar" style="display:none;"></div>
+        <button id="photoBtn" style="display:none;" aria-label="사진 찍기">📷</button>
         <div id="panelHost"></div>
     </div>
     <div id="toolbar">
@@ -1109,7 +1260,7 @@ var OWNER_MAX = 8;
 var OWNER_NAME = '주인공';      // fallback only - replaced by setOwnerName()
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '4.7';
+var GAME_VER = '4.9';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 58;        // back wall height above the map (world px)
@@ -1554,6 +1705,149 @@ var REG_STORIES = {
     idol: ['쉿, 변장하고 왔어요! 여기 진짜 힐링 되네요~',
         '새 앨범 재킷 촬영지로 여기 어떨까 매니저랑 얘기 중이에요!',
         '콘서트에서 제일 좋아하는 곳이 여기라고 말해 버렸어요. 헤헤!']
+};
+
+// ---------- marketing campaigns (v4.8) ----------
+// a venue is almost always at its concurrent-visitor ceiling (measured
+// 2026-10-21: a visit lasts ~30 game days, so the room fills in days and then
+// arrivals wait for departures). raising the arrival rate alone therefore does
+// next to nothing. a campaign's real lever is cap: extra concurrent slots,
+// which is extra throughput for as long as it runs. boost still helps in the
+// moments the room is NOT full (just after opening or expanding).
+//   days   duration in game days (a visit is ~30, so short runs do little)
+//   cap    extra concurrent visitors per room while it runs
+//   boost  arrival-rate bonus (only matters below the ceiling)
+//   jobs   visitor jobs drawn more often while it runs
+//   fame   one-off fame on launch (scaled by grade in game.js)
+//   sat    satisfaction head start for every arrival
+//   shop   shop-price multiplier while it runs (radio: fuller wallets)
+//   viewFame  chance per exhibit view of +1 fame (sns: people post photos)
+//   price  cost as a multiple of the NAIVE extra revenue (see campaignCost).
+//          measured 2026-10-21: extra slots in a packed room return only
+//          ~30-70% of the naive estimate (more people = slower walking and
+//          longer queues = longer visits), so prices sit near 0.3. late in
+//          the game a campaign is meant to be a money sink that buys fame and
+//          a livelier floor, not a money printer.
+var CAMPAIGNS = {
+    flyer:    { name: '전단지 돌리기', icon: '📄', lvReq: 1, days: 30, cap: 3, boost: 0.15, price: 0.25,
+        desc: '동네에 전단지를 돌려요. 싸고 무난한 홍보' },
+    radio:    { name: '라디오 광고', icon: '📻', lvReq: 2, days: 45, cap: 4, boost: 0.2, price: 0.3, shop: 1.2,
+        jobs: ['lady', 'man', 'office', 'grandma'], desc: '어른 손님이 많이 와요. 매장 매출 +20%!' },
+    sns:      { name: 'SNS 광고', icon: '📱', lvReq: 2, days: 45, cap: 4, boost: 0.2, price: 0.3, fame: 5, viewFame: 0.05,
+        jobs: ['boy', 'girl', 'youtuber', 'idol'], desc: '학생과 유튜버가 몰려와요. 관람할 때마다 인기가 오르기 쉬워요' },
+    festival: { name: '축제', icon: '🎪', lvReq: 3, days: 48, cap: 6, boost: 0.25, price: 0.3, sat: 10,
+        desc: '계절 축제를 열어요. 손님들이 들뜬 기분으로 입장해 좋은 소문이 나요' },
+    tv:       { name: 'TV 광고', icon: '📺', lvReq: 4, days: 60, cap: 8, boost: 0.35, price: 0.3, fame: 20,
+        desc: '전국에 방송! 손님이 크게 늘고 인기가 확 올라요' }
+};
+var CAMPAIGN_ORDER = ['flyer', 'radio', 'sns', 'festival', 'tv'];
+// rest days after a campaign before the next can start
+var CAMPAIGN_COOLDOWN = 10;
+// ceilings shared by every temporary bonus (campaign + weather), so stacking
+// can never run away - the v4.3 rule: a numeric bonus ships with its cap
+var EXTRA_CAP_MAX = 12;
+var INFLOW_MULT_MAX = 1.5;
+
+// ---------- weather (v4.8) ----------
+// all three venues are INDOORS, which is the whole idea: bad weather outside
+// sends people in. like campaigns, the lever is cap (extra concurrent slots)
+// because a venue is nearly always at its ceiling; inflow only matters while
+// a room has free space. both stack with campaigns under EXTRA_CAP_MAX and
+// INFLOW_MULT_MAX.
+//   cap     extra concurrent visitors per room
+//   inflow  arrival-rate multiplier
+//   sat     satisfaction head start for arrivals
+//   thirst  thirst decay multiplier (heat sells drinks)
+//   catCap  extra cap in the cat cafe only (cosy weather)
+var WEATHER = {
+    sunny:  { name: '맑음', icon: '☀️', sat: 3,
+        desc: '기분 좋은 날씨예요. 손님들이 웃으며 들어와요' },
+    cloudy: { name: '흐림', icon: '☁️',
+        desc: '평범한 날이에요' },
+    rain:   { name: '비', icon: '🌧️', cap: 3, inflow: 1.15,
+        desc: '비를 피해 손님이 몰려와요! (동시 손님 +3)' },
+    heat:   { name: '폭염', icon: '🔥', cap: 2, inflow: 1.1, thirst: 1.3,
+        desc: '더위를 피해 시원한 실내로! 음료가 잘 팔려요' },
+    snow:   { name: '눈', icon: '❄️', inflow: 0.9, sat: 4, catCap: 2,
+        desc: '눈이 와요. 손님은 조금 줄지만 다들 설레요' }
+};
+// relative odds of each weather per season
+var WEATHER_ODDS = {
+    spring: { sunny: 5, cloudy: 3, rain: 2 },
+    summer: { sunny: 4, cloudy: 2, rain: 3, heat: 3 },
+    autumn: { sunny: 5, cloudy: 3, rain: 2 },
+    winter: { sunny: 3, cloudy: 4, snow: 3 }
+};
+// a spell lasts this many game days (a day is 1.25s at x1, so changing every
+// day would flicker; a few days reads as "today it is raining")
+var WEATHER_SPELL = [3, 8];
+
+// ---------- recipe workshop (v4.9) ----------
+// the discovery loop the newest Kairosoft titles lean on: collect ingredients
+// from the venue's own activity, combine two, and find out what they make.
+// one recipe SHAPE is shared by all three games (slots A..H, effects, odds)
+// and each theme dresses it with its own ingredients and names. that keeps
+// the balance identical across games and the content cost to names only.
+//
+// slots A-F are common; G and H are rare (later grades, expeditions, close
+// regulars). a pair is order-free and may repeat a slot (F+F).
+//   pct    appeal bonus % while the treat lasts (<= TREAT_PCT_MAX)
+//   days   how long it lasts, game days
+//   rp     research multiplier on that exhibit while it lasts
+//   fame   one-off fame when used
+//   perm   museum: a permanent +RESTORE_PCT instead, once per exhibit
+var RECIPE_SHAPE = [
+    { id: 'r1', a: 'A', b: 'B', pct: 15, days: 30 },
+    { id: 'r2', a: 'C', b: 'E', pct: 12, days: 45 },
+    { id: 'r3', a: 'D', b: 'A', pct: 25, days: 30 },
+    { id: 'r4', a: 'F', b: 'F', pct: 8, days: 60, perm: true },
+    { id: 'r5', a: 'E', b: 'G', pct: 30, days: 40 },
+    { id: 'r6', a: 'B', b: 'C', pct: 5, days: 30, rp: 2 },
+    { id: 'r7', a: 'D', b: 'H', pct: 40, days: 30 },
+    { id: 'r8', a: 'A', b: 'F', pct: 10, days: 20, fame: 8 },
+    { id: 'r9', a: 'G', b: 'H', pct: 40, days: 60, fame: 15 }
+];
+var TREAT_PCT_MAX = 40;
+var RESTORE_PCT = 5;
+var PANTRY_MAX = 20;
+var RARE_SLOTS = ['G', 'H'];
+// what a failed combination makes: a small, short, slightly silly treat
+var RECIPE_FAIL = { pct: 3, days: 10 };
+
+var RECIPE_BOOK = {
+    aqua: {
+        tab: '먹이 연구소', icon: '🍳', item: '특제 먹이', use: '주기', failName: '수상한 먹이',
+        ing: {
+            A: ['크릴', '🦐'], B: ['플랑크톤', '🟢'], C: ['해초', '🌿'], D: ['오징어', '🦑'],
+            E: ['조개', '🐚'], F: ['사료', '🥣'], G: ['진주', '🦪'], H: ['심해 미네랄', '💎']
+        },
+        names: {
+            r1: '영양 만점 먹이', r2: '바다 정원 샐러드', r3: '포식자 스페셜', r4: '두 배 사료',
+            r5: '진주 디저트', r6: '초록 수프', r7: '심해의 만찬', r8: '반짝 먹이', r9: '전설의 먹이'
+        }
+    },
+    museum: {
+        tab: '복원 공방', icon: '🛠️', item: '복원 키트', use: '쓰기', failName: '엉성한 땜질',
+        ing: {
+            A: ['점토', '🟤'], B: ['송진', '🍯'], C: ['비단', '🧵'], D: ['금박', '✨'],
+            E: ['안료', '🎨'], F: ['붓', '🖌️'], G: ['운석 가루', '☄️'], H: ['고대 먹', '🖋️']
+        },
+        names: {
+            r1: '기본 보수 키트', r2: '색 되살리기', r3: '황금 덧칠', r4: '완벽 복원',
+            r5: '별빛 채색', r6: '연구용 탁본', r7: '왕의 광택', r8: '반짝 세척', r9: '전설의 복원'
+        }
+    },
+    cat: {
+        tab: '간식 공방', icon: '🍪', item: '특제 간식', use: '주기', failName: '수상한 간식',
+        ing: {
+            A: ['참치', '🐟'], B: ['닭가슴살', '🍗'], C: ['우유', '🥛'], D: ['연어', '🍣'],
+            E: ['단호박', '🎃'], F: ['캣닢', '🌿'], G: ['꿀', '🍯'], H: ['치즈', '🧀']
+        },
+        names: {
+            r1: '참치 닭 꼬치', r2: '호박 밀크', r3: '연어 참치 덮밥', r4: '캣닢 쿠션',
+            r5: '꿀 호박 푸딩', r6: '따끈 우유죽', r7: '연어 치즈 롤', r8: '반짝 츄르', r9: '전설의 츄르'
+        }
+    }
 };
 
 // ---------- floor tiles ----------
@@ -2613,7 +2907,8 @@ var TROPHY_GAMES = [
 function tStat(st, gameId)
 {
     var s = (st && st.stats) ? st.stats[gameId] : null;
-    return s || { opened: false, level: 0, fame: 0, visTotal: 0, rank: 99, rank1: false, dex: false, quests: 0, chain: 0, combos: 0, year: 1, decos: 0 };
+    return s || { opened: false, level: 0, fame: 0, visTotal: 0, rank: 99, rank1: false, dex: false, quests: 0, chain: 0, combos: 0, year: 1, decos: 0,
+        regs: 0, regs5: 0, legend: false, recipes: 0 };
 }
 
 // does every game satisfy fn?
@@ -2669,7 +2964,12 @@ var TROPHIES = [];
         { key: 'rank1',  icon: '🏆', name: '전국 1위',        desc: '전국 랭킹 1위를 찍었다',           ok: function (s) { return s.rank1; } },
         { key: 'dex',    icon: '📖', name: '도감 완성',       desc: '전시물 24종을 모두 모았다',        ok: function (s) { return s.dex; } },
         { key: 'combo10',icon: '🔍', name: '비밀 스폿 10개',  desc: '숨겨진 스폿을 10개 찾아냈다',      ok: function (s) { return s.combos >= 10; } },
-        { key: 'chain',  icon: '📌', name: '목표 완주',       desc: '기본 목표 21개를 전부 달성했다',   ok: function (s) { return s.chain > 0 && s.quests >= s.chain; } }
+        { key: 'chain',  icon: '📌', name: '목표 완주',       desc: '기본 목표 21개를 전부 달성했다',   ok: function (s) { return s.chain > 0 && s.quests >= s.chain; } },
+        // fun pack (v4.9). stats from older stores are undefined, which the
+        // comparisons below read as "not yet" - no migration needed
+        { key: 'reg5',   icon: '🌟', name: '평생 단골',       desc: '단골 손님 한 명과 ♥5가 됐다',      ok: function (s) { return (s.regs5 || 0) >= 1; } },
+        { key: 'legend', icon: '👑', name: '레전드 전시',     desc: '이름 붙인 전시물이 5년을 함께했다', ok: function (s) { return !!s.legend; } },
+        { key: 'recipe', icon: '🍳', name: '레시피 마스터',   desc: '공방 레시피 9개를 모두 찾았다',    ok: function (s) { return (s.recipes || 0) >= RECIPE_SHAPE.length; } }
     ];
     for (var g = 0; g < TROPHY_GAMES.length; g++)
     {
@@ -2701,7 +3001,8 @@ TROPHIES.push(
     { id: 'all_chain', group: '💝 3게임 통합', icon: '🎯', name: '목표 정복자',     desc: '세 게임 기본 목표를 모두 완주했다', check: function (st) { return tAll(st, function (s) { return s.chain > 0 && s.quests >= s.chain; }); } },
     { id: 'sum_vis1',  group: '💝 3게임 통합', icon: '🚶', name: '손님 10,000명',   desc: '세 게임 합쳐 손님 10,000명',        check: function (st) { return tSum(st, 'visTotal') >= 10000; } },
     { id: 'sum_vis2',  group: '💝 3게임 통합', icon: '🎊', name: '손님 50,000명',   desc: '세 게임 합쳐 손님 50,000명',        check: function (st) { return tSum(st, 'visTotal') >= 50000; } },
-    { id: 'deco_all',  group: '💝 3게임 통합', icon: '🎀', name: '장식품 수집가',   desc: '한 게임에서 장식품 10종을 모두 모았다', check: function (st) { return tMax(st, 'decos') >= DECO_ORDER.length; } }
+    { id: 'deco_all',  group: '💝 3게임 통합', icon: '🎀', name: '장식품 수집가',   desc: '한 게임에서 장식품 10종을 모두 모았다', check: function (st) { return tMax(st, 'decos') >= DECO_ORDER.length; } },
+    { id: 'sum_regs',  group: '💝 3게임 통합', icon: '👫', name: '단골 부자',       desc: '세 게임 합쳐 단골 손님 30명',       check: function (st) { return tSum(st, 'regs') >= 30; } }
 );
 
 // ---------- decorations ----------
@@ -5317,6 +5618,21 @@ function defaultState()
         regSeq: 1,
         // satisfaction diagnosis counters (v4.7): see diagBad()/diagGood()
         diag: emptyDiag(),
+        // marketing (v4.8)
+        campaign: null,
+        campCd: 0,
+        campCount: 0,
+        lastMon: null,
+        photoCount: 0,
+        weather: 'sunny',
+        weatherDays: 5,
+        weatherNext: 'cloudy',
+        // recipe workshop (v4.9)
+        pantry: {},
+        items: {},
+        recipes: [],
+        recipeTried: [],
+        recipeCount: 0,
         // per-room save data, indexed the same as THEME.rooms. kept separate
         // from THEME.rooms (which holds the fixed outline/entrance) because
         // this half is player progress and has to survive in the save file.
@@ -5448,6 +5764,12 @@ function loadGame()
         }
         diagReady();
         THOUGHT_FEED = [];
+        pantryReady();
+        // a campaign from a newer build this one does not know is dropped
+        if (S.campaign && !CAMPAIGNS[S.campaign.id])
+        {
+            S.campaign = null;
+        }
         // pre-rework saves have requests that were auto-tracked; treat any
         // request without the accept flag as already accepted so nothing stalls
         if (S.requests)
@@ -5989,7 +6311,11 @@ function syncTrophies()
         chain: (THEME.quests || []).length,
         combos: (S.combosDone || []).length,
         year: S.year || 1,
-        decos: decoTypesOwned()
+        decos: decoTypesOwned(),
+        regs: (S.regulars || []).length,
+        regs5: (S.regulars || []).filter(function (rg) { return rg.heart >= 100; }).length,
+        legend: (S.objects || []).some(function (o) { return bondLevel(o) >= BOND_TITLES.length; }),
+        recipes: (S.recipes || []).length
     });
     var fresh = [];
     for (var i = 0; i < TROPHIES.length; i++)
@@ -6582,6 +6908,10 @@ function stockTank(o, spId)
     o.since = absDay();
     delete o.nick;
     delete o.bondShown;
+    // a treat was given to the old resident, and a museum restoration was
+    // done to the old artifact - neither belongs to the case
+    delete o.treat;
+    delete o.restored;
     addFloat((o.x + 0.5) * TS, o.y * TS, sp.name + ' ' + THEME.text.stockFloat, '#a0e8ff');
     sfx('place');
     checkCombos();
@@ -6595,7 +6925,7 @@ function tankAppealParts(o)
     var parts = {
         base: b.base, sp: 0, spLv: 1, aura: 0, auraCapped: false,
         comboMult: 1 + S.combosDone.length * 0.06,
-        moodMult: 1, compatMult: 1, specialMult: 1, buffMult: 1, bondMult: 1, total: 1
+        moodMult: 1, compatMult: 1, specialMult: 1, buffMult: 1, bondMult: 1, treatMult: 1, restoreMult: 1, total: 1
     };
     if (!o.species)
     {
@@ -6645,7 +6975,11 @@ function tankAppealParts(o)
     // their own (capped at +10% - see BOND_TITLES)
     var bt = bondTitle(o);
     parts.bondMult = bt ? 1 + bt.pct / 100 : 1;
-    parts.total = (parts.base + parts.sp + parts.aura) * parts.comboMult * parts.moodMult * parts.compatMult * parts.specialMult * parts.buffMult * parts.bondMult;
+    // workshop treats (timed, one at a time, <= TREAT_PCT_MAX) and the
+    // museum's one-off permanent restoration
+    parts.treatMult = treatActive(o) ? 1 + Math.min(TREAT_PCT_MAX, o.treat.pct) / 100 : 1;
+    parts.restoreMult = o.restored ? 1 + RESTORE_PCT / 100 : 1;
+    parts.total = (parts.base + parts.sp + parts.aura) * parts.comboMult * parts.moodMult * parts.compatMult * parts.specialMult * parts.buffMult * parts.bondMult * parts.treatMult * parts.restoreMult;
     return parts;
 }
 
@@ -6760,7 +7094,7 @@ function tickBonds()
                     body: '<div style="text-align:center;"><img src="' + iconForSpecies(o.species) + '" style="width:44px;height:44px;"><br>' +
                         '<b style="font-size:16px;color:#c07000;">' + exhibitName(o) + '</b>와(과) 함께한 지 <b>' + tenureText(o) + '</b>!<br><br>' +
                         '이제 모두가 아는 <b>' + t.name + '</b>이(가) 됐어요.<br>매력 <b>+' + t.pct + '%</b></div>',
-                    buttons: [{ label: '앞으로도 잘 부탁해!', cls: '' }]
+                    buttons: [photoButton(o.nick + ' 레전드'), { label: '앞으로도 잘 부탁해!', cls: '' }]
                 });
             }
             else
@@ -7236,7 +7570,7 @@ function diagAdvice()
         hunger: '먹을 곳이 부족해요 — ' + rn + '매점이나 카페를 지어 보세요.',
         thirst: '마실 곳이 부족해요 — ' + rn + '자판기나 아이스크림 가게를 지어 보세요.',
         energy: '쉴 곳이 부족해요 — ' + rn + '벤치를 놓아 보세요.',
-        empty: '볼거리가 부족해요 — ' + rn + THEME.text.enclosureWord + '를 늘리고 ' + THEME.text.speciesWord + '를 채워 보세요.',
+        empty: '볼거리가 부족해요 — ' + rn + '전시 공간을 늘리고 빈 곳을 채워 보세요.',
         boring: '전시 매력이 낮아요 — 강화하거나 화단·장식품·비밀 스폿으로 매력을 올려 보세요.',
         crowd: '너무 붐벼요 — ' + rn + '공간을 넓히거나 볼거리를 흩어 놓아 보세요.',
         dull: '좀 밋밋해요 — ' + rn + '화단·장식품을 놓거나 꽃길 바닥을 깔아 보세요.'
@@ -7254,6 +7588,636 @@ function diagLine()
         out.push(DIAG_ICON[DIAG_CATS[i]] + ' ' + DIAG_LABEL[DIAG_CATS[i]] + ' ' + (sc === null ? '-' : sc));
     }
     return out.join(' · ');
+}
+
+// ---------- recipe workshop (v4.9) ----------
+function recipeBook()
+{
+    return RECIPE_BOOK[THEME.id] || RECIPE_BOOK.aqua;
+}
+
+function ingName(slot)
+{
+    return recipeBook().ing[slot][0];
+}
+
+function ingIcon(slot)
+{
+    return recipeBook().ing[slot][1];
+}
+
+function ingLabel(slot)
+{
+    return ingIcon(slot) + ' ' + ingName(slot);
+}
+
+function pairKey(a, b)
+{
+    return (a < b) ? a + '+' + b : b + '+' + a;
+}
+
+function recipeById(id)
+{
+    for (var i = 0; i < RECIPE_SHAPE.length; i++)
+    {
+        if (RECIPE_SHAPE[i].id === id)
+        {
+            return RECIPE_SHAPE[i];
+        }
+    }
+    return null;
+}
+
+function recipeForPair(a, b)
+{
+    var k = pairKey(a, b);
+    for (var i = 0; i < RECIPE_SHAPE.length; i++)
+    {
+        if (pairKey(RECIPE_SHAPE[i].a, RECIPE_SHAPE[i].b) === k)
+        {
+            return RECIPE_SHAPE[i];
+        }
+    }
+    return null;
+}
+
+function recipeName(id)
+{
+    if (id === 'fail')
+    {
+        return recipeBook().failName;
+    }
+    return recipeBook().names[id] || id;
+}
+
+// museum's r4 is a permanent restoration instead of a timed treat
+function recipeIsPerm(r)
+{
+    return !!(r && r.perm && THEME.id === 'museum');
+}
+
+// one line describing what an item does when used
+function recipeEffectText(id)
+{
+    var r = (id === 'fail') ? RECIPE_FAIL : recipeById(id);
+    if (!r)
+    {
+        return '';
+    }
+    if (recipeIsPerm(r))
+    {
+        return '매력 영구 +' + RESTORE_PCT + '% (전시마다 한 번)';
+    }
+    var parts = ['매력 +' + r.pct + '% · ' + r.days + '일'];
+    if (r.rp)
+    {
+        parts.push(THEME.text.rpWord + ' ×' + r.rp);
+    }
+    if (r.fame)
+    {
+        parts.push('인기 +' + r.fame);
+    }
+    if (THEME.feature === 'mood')
+    {
+        parts.push('기분 +25');
+    }
+    return parts.join(' · ');
+}
+
+function pantryReady()
+{
+    if (!S.pantry || typeof S.pantry !== 'object')
+    {
+        S.pantry = {};
+    }
+    if (!S.items || typeof S.items !== 'object')
+    {
+        S.items = {};
+    }
+    if (!Array.isArray(S.recipes))
+    {
+        S.recipes = [];
+    }
+    if (!Array.isArray(S.recipeTried))
+    {
+        S.recipeTried = [];
+    }
+}
+
+function grantIngredient(slot, n)
+{
+    pantryReady();
+    var have = S.pantry[slot] || 0;
+    var add = Math.min(n || 1, PANTRY_MAX - have);
+    if (add <= 0)
+    {
+        return 0;
+    }
+    S.pantry[slot] = have + add;
+    return add;
+}
+
+// a random ingredient from the venue's activity. rare slots need grade 3+
+// unless the caller forces the chance (expeditions, close regulars).
+// returns the slot granted, or null if the pantry slot was full
+function dropIngredient(rareChance, quiet)
+{
+    var rare = Math.random() < (rareChance || 0);
+    var pool = rare ? RARE_SLOTS : ['A', 'B', 'C', 'D', 'E', 'F'];
+    var slot = pool[Math.floor(Math.random() * pool.length)];
+    if (!grantIngredient(slot, 1))
+    {
+        return null;
+    }
+    if (!quiet)
+    {
+        showToast('🧺 재료 획득: ' + ingLabel(slot) + (rare ? ' ✨' : ''));
+    }
+    return slot;
+}
+
+// the rare-drop chance ordinary activity gets: none before grade 3
+function rareChanceNow(base)
+{
+    return (S.level >= 3) ? base : 0;
+}
+
+// combine two ingredients. returns { recipe, isNew, fail } or null if the
+// player does not have them
+function mixRecipe(a, b)
+{
+    pantryReady();
+    var needA = (a === b) ? 2 : 1;
+    if ((S.pantry[a] || 0) < needA || (S.pantry[b] || 0) < 1)
+    {
+        showToast('재료가 부족해요');
+        return null;
+    }
+    S.pantry[a]--;
+    S.pantry[b]--;
+    S.recipeCount = (S.recipeCount || 0) + 1;
+    var r = recipeForPair(a, b);
+    var key = pairKey(a, b);
+    if (!r)
+    {
+        S.items.fail = (S.items.fail || 0) + 1;
+        if (S.recipeTried.indexOf(key) < 0)
+        {
+            S.recipeTried.push(key);
+        }
+        sfx('bad');
+        return { recipe: null, isNew: false, fail: true };
+    }
+    S.items[r.id] = (S.items[r.id] || 0) + 1;
+    var isNew = S.recipes.indexOf(r.id) < 0;
+    if (isNew)
+    {
+        S.recipes.push(r.id);
+        sfx('fanfare');
+        var book = recipeBook();
+        queueModal({
+            title: book.icon + ' 새 레시피 발견!',
+            body: '<div style="text-align:center;"><div style="font-size:30px;">' + ingIcon(a) + ' + ' + ingIcon(b) + '</div>' +
+                '<b style="font-size:17px;color:#c07000;">「' + recipeName(r.id) + '」</b><br>' +
+                '<span class="small">' + ingLabel(a) + ' + ' + ingLabel(b) + '</span><br><br>' +
+                '<div class="regLine">' + recipeEffectText(r.id) + '</div>' +
+                '<span class="small">' + THEME.text.enclosureWord + '를 탭해서 ' + book.use + '세요 · 레시피 ' + S.recipes.length + '/' + RECIPE_SHAPE.length + '</span></div>',
+            buttons: [photoButton('「' + recipeName(r.id) + '」 발견'), { label: '해냈다!', cls: '' }]
+        });
+    }
+    else
+    {
+        sfx('coin');
+    }
+    return { recipe: r, isNew: isNew, fail: false };
+}
+
+function treatActive(o)
+{
+    return !!(o.treat && o.treat.until > absDay());
+}
+
+function treatDaysLeft(o)
+{
+    return treatActive(o) ? o.treat.until - absDay() : 0;
+}
+
+// use a made item on an exhibit. returns true if it was consumed
+function useItem(o, id)
+{
+    pantryReady();
+    if (!o.species || (S.items[id] || 0) <= 0)
+    {
+        return false;
+    }
+    var r = (id === 'fail') ? RECIPE_FAIL : recipeById(id);
+    if (!r)
+    {
+        return false;
+    }
+    var book = recipeBook();
+    if (recipeIsPerm(r))
+    {
+        if (o.restored)
+        {
+            showToast('이미 완벽하게 복원된 유물이에요');
+            return false;
+        }
+        o.restored = true;
+    }
+    else
+    {
+        // one treat at a time per exhibit: a new one replaces the old, so
+        // stacking treats can never exceed TREAT_PCT_MAX
+        o.treat = { id: id, until: absDay() + r.days, pct: Math.min(TREAT_PCT_MAX, r.pct), rp: r.rp || 1 };
+    }
+    S.items[id]--;
+    if (r.fame)
+    {
+        S.fame += r.fame;
+    }
+    if (THEME.feature === 'mood')
+    {
+        o.mood = Math.min(100, (o.mood === undefined ? 80 : o.mood) + 25);
+    }
+    var cx = (o.x + oW(o) / 2) * TS;
+    addEmote(cx - 6, o.y * TS, 'sparkle');
+    addEmote(cx + 6, o.y * TS - 8, 'heart');
+    sfx('feed');
+    showToast(book.icon + ' ' + exhibitName(o) + '에게 「' + recipeName(id) + '」! ' + recipeEffectText(id));
+    return true;
+}
+
+// ---------- weather (v4.8) ----------
+function weatherDef()
+{
+    return WEATHER[S.weather] || WEATHER.sunny;
+}
+
+function rollWeather(season)
+{
+    var odds = WEATHER_ODDS[season] || WEATHER_ODDS.spring;
+    var total = 0;
+    for (var k in odds)
+    {
+        total += odds[k];
+    }
+    var r = Math.random() * total;
+    for (var k2 in odds)
+    {
+        r -= odds[k2];
+        if (r <= 0)
+        {
+            return k2;
+        }
+    }
+    return 'sunny';
+}
+
+function weatherSpellDays()
+{
+    return WEATHER_SPELL[0] + Math.floor(Math.random() * (WEATHER_SPELL[1] - WEATHER_SPELL[0] + 1));
+}
+
+// daily: count down the spell, then move to the forecast weather. the
+// forecast is re-checked against the season it lands in, so a "snow"
+// forecast made in late February never arrives in March.
+function tickWeather()
+{
+    if (!WEATHER[S.weather])
+    {
+        S.weather = 'sunny';
+    }
+    S.weatherDays = (S.weatherDays || 1) - 1;
+    if (S.weatherDays > 0)
+    {
+        return;
+    }
+    var season = seasonOf(S.month);
+    var next = S.weatherNext;
+    if (!next || !(WEATHER_ODDS[season] || {})[next])
+    {
+        next = rollWeather(season);
+    }
+    var prev = S.weather;
+    S.weather = next;
+    S.weatherDays = weatherSpellDays();
+    S.weatherNext = rollWeather(season);
+    if (next !== prev && (next === 'rain' || next === 'heat' || next === 'snow'))
+    {
+        var w = WEATHER[next];
+        showToast(w.icon + ' ' + w.name + ' — ' + w.desc);
+    }
+}
+
+function weatherCap()
+{
+    var w = weatherDef();
+    var n = w.cap || 0;
+    if (w.catCap && THEME.feature === 'mood')
+    {
+        n += w.catCap;
+    }
+    return n;
+}
+
+function weatherInflow()
+{
+    return weatherDef().inflow || 1;
+}
+
+// ---------- photo album (v4.8) ----------
+// photos live in their OWN localStorage key per game, never in the save:
+// a save code with pictures in it would be hundreds of KB, and a failed photo
+// write must never be able to take the game save down with it.
+// the origin's ~5MB quota is shared with the saves, so all albums together
+// are held to a budget well under it (plan 2026-10-21, 3-6).
+var ALBUM_MAX = 12;
+var ALBUM_BUDGET = 1500000;     // chars across all three games
+var ALBUM_W = 480;              // stored width in px
+var ALBUM_Q = 0.72;             // jpeg quality
+
+function albumKey(themeId)
+{
+    return 'story_box_album_' + (themeId || THEME.id) + '_v1';
+}
+
+function loadAlbum(themeId)
+{
+    try
+    {
+        var raw = localStorage.getItem(albumKey(themeId));
+        var list = raw ? JSON.parse(raw) : [];
+        return Array.isArray(list) ? list : [];
+    }
+    catch (e)
+    {
+        return [];
+    }
+}
+
+// chars currently used by every game's album
+function albumBytesUsed(exceptTheme)
+{
+    var n = 0;
+    for (var i = 0; i < THEME_ORDER.length; i++)
+    {
+        if (THEME_ORDER[i] === exceptTheme)
+        {
+            continue;
+        }
+        try
+        {
+            var raw = localStorage.getItem(albumKey(THEME_ORDER[i]));
+            n += raw ? raw.length : 0;
+        }
+        catch (e)
+        {
+        }
+    }
+    return n;
+}
+
+// returns null on success or a message saying why it was not saved.
+// growing=false (a delete) skips the budget: shrinking an album must always
+// work, or a player over budget could never make room again
+function saveAlbum(list, growing)
+{
+    var json = JSON.stringify(list);
+    if (growing && albumBytesUsed(THEME.id) + json.length > ALBUM_BUDGET)
+    {
+        return '사진 저장 공간이 꽉 찼어요. 앨범에서 몇 장 지워 주세요';
+    }
+    try
+    {
+        localStorage.setItem(albumKey(), json);
+    }
+    catch (e)
+    {
+        return '기기 저장 공간이 부족해 사진을 저장하지 못했어요';
+    }
+    return null;
+}
+
+// the scene as it is right now, scaled down to a jpeg data url
+function captureScene()
+{
+    renderWorld();
+    postProcess();
+    var src = cv;
+    var w = Math.min(ALBUM_W, src.width);
+    var h = Math.round(src.height * w / src.width);
+    var c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    var cx = c.getContext('2d');
+    cx.imageSmoothingEnabled = true;
+    cx.drawImage(src, 0, 0, w, h);
+    return c.toDataURL('image/jpeg', ALBUM_Q);
+}
+
+function photoCaption(label)
+{
+    var where = (roomsOpen() > 1) ? ' · ' + roomDef(curRoom()).name : '';
+    return S.year + '년차 ' + S.month + '월' + where + (label ? ' · ' + label : '');
+}
+
+// take a photo of the venue; label is an optional memory ("인기 수족관 승급")
+function takePhoto(label)
+{
+    var list = loadAlbum();
+    if (list.length >= ALBUM_MAX)
+    {
+        showToast('📷 앨범이 가득 찼어요 (' + ALBUM_MAX + '장) — 📊 경영 → 앨범에서 지워 주세요');
+        return false;
+    }
+    var img;
+    try
+    {
+        img = captureScene();
+    }
+    catch (e)
+    {
+        showToast('사진을 찍지 못했어요');
+        return false;
+    }
+    list.push({ img: img, cap: photoCaption(label), t: Date.now() });
+    var err = saveAlbum(list, true);
+    if (err)
+    {
+        showToast('📷 ' + err);
+        return false;
+    }
+    S.photoCount = (S.photoCount || 0) + 1;
+    sfx('shutter');
+    flashScreen();
+    showToast('📷 찰칵! 앨범에 저장했어요 (' + list.length + '/' + ALBUM_MAX + ')');
+    return true;
+}
+
+function deletePhoto(idx)
+{
+    var list = loadAlbum();
+    if (idx < 0 || idx >= list.length)
+    {
+        return;
+    }
+    list.splice(idx, 1);
+    saveAlbum(list, false);
+}
+
+// a modal button that snaps the moment the modal celebrates
+function photoButton(label)
+{
+    return {
+        label: '📷 기념사진', cls: 'blue',
+        onClick: function () { takePhoto(label); }
+    };
+}
+
+// ---------- marketing campaigns (v4.8) ----------
+function campaignDef(id)
+{
+    var c = CAMPAIGNS[id];
+    if (!c)
+    {
+        return null;
+    }
+    if (id === 'festival')
+    {
+        // the festival takes the season it is launched in
+        var se = SEASONS[seasonOf(S.month)];
+        return Object.assign({}, c, { name: se.name + ' ' + c.name, icon: se.icon });
+    }
+    return c;
+}
+
+// revenue one visitor brought in last month (entry + shops), or a level-based
+// guess before the first month has closed
+function revenuePerVisitor()
+{
+    var lm = S.lastMon;
+    if (lm && lm.vis >= 3)
+    {
+        return Math.max(80, (lm.feeIn + lm.shopIn) / lm.vis);
+    }
+    return 150 + S.level * 120 + S.fee;
+}
+
+// extra visitors a campaign should bring: each extra slot turns over about
+// once per visit length (~30 days), per open room
+function campaignExtraVisitors(c)
+{
+    return c.cap * (c.days / 30) * roomsOpen();
+}
+
+// priced off what it is expected to earn, so it is a real decision at every
+// stage of the game: too cheap late and it is free money, too dear early and
+// nobody touches it. price < 1 keeps it worth doing.
+function campaignCost(id)
+{
+    var c = campaignDef(id);
+    var est = campaignExtraVisitors(c) * revenuePerVisitor();
+    return Math.max(300, Math.round(est * c.price / 50) * 50);
+}
+
+function campaignBlock(id)
+{
+    var c = CAMPAIGNS[id];
+    if (S.level < c.lvReq)
+    {
+        return starStr(c.lvReq) + ' 필요';
+    }
+    if (S.campaign)
+    {
+        return '다른 홍보가 진행 중';
+    }
+    if ((S.campCd || 0) > 0)
+    {
+        return S.campCd + '일 후 가능';
+    }
+    if (!S.opened)
+    {
+        return '개장 후 가능';
+    }
+    if (S.money < campaignCost(id))
+    {
+        return '자금 부족';
+    }
+    return null;
+}
+
+function startCampaign(id)
+{
+    if (campaignBlock(id))
+    {
+        return false;
+    }
+    var c = campaignDef(id);
+    var cost = campaignCost(id);
+    S.money -= cost;
+    S.campaign = { id: id, name: c.name, icon: c.icon, days: c.days, total: c.days, cap: c.cap, boost: c.boost, jobs: c.jobs || null,
+        sat: c.sat || 0, shop: c.shop || 1, viewFame: c.viewFame || 0 };
+    S.campCount = (S.campCount || 0) + 1;
+    var fameTxt = '';
+    if (c.fame)
+    {
+        var f = c.fame + S.level * 2;
+        S.fame += f;
+        fameTxt = ' · 인기 +' + f;
+    }
+    sfx('fanfare');
+    showToast(c.icon + ' ' + c.name + ' 시작! (' + c.days + '일)' + fameTxt);
+    return true;
+}
+
+function tickCampaign()
+{
+    if (S.campaign)
+    {
+        S.campaign.days--;
+        if (S.campaign.days <= 0)
+        {
+            showToast(S.campaign.icon + ' ' + S.campaign.name + '이(가) 끝났어요');
+            S.campaign = null;
+            S.campCd = CAMPAIGN_COOLDOWN;
+        }
+        return;
+    }
+    if ((S.campCd || 0) > 0)
+    {
+        S.campCd--;
+    }
+}
+
+// temporary extra concurrent slots per room (campaign + weather), capped
+function extraCapNow()
+{
+    var n = 0;
+    if (S.campaign)
+    {
+        n += S.campaign.cap;
+    }
+    if (typeof weatherCap === 'function')
+    {
+        n += weatherCap();
+    }
+    return Math.min(EXTRA_CAP_MAX, n);
+}
+
+// temporary arrival-rate multiplier (campaign x weather), capped
+function inflowMult()
+{
+    var m = 1;
+    if (S.campaign)
+    {
+        m *= 1 + S.campaign.boost;
+    }
+    if (typeof weatherInflow === 'function')
+    {
+        m *= weatherInflow();
+    }
+    return Math.min(INFLOW_MULT_MAX, m);
 }
 
 // ---------- floats / emotes ----------
@@ -7326,6 +8290,13 @@ function maxVisitorsNow()
     {
         m = MAX_VISITORS + buffAdd('cap');
     }
+    // campaigns and weather open extra slots on top of the normal ceiling;
+    // the burst ceiling below still bounds everything
+    m += extraCapNow();
+    if (m > MAX_VISITORS_BURST + buffAdd('cap'))
+    {
+        m = MAX_VISITORS_BURST + buffAdd('cap');
+    }
     // a group visit needs room to actually pack the place out, otherwise
     // the crowd is blocked by the normal ceiling and nothing happens
     if (S.groupBurst > 0)
@@ -7371,13 +8342,20 @@ function spawnVisitor(room)
         }
         return !t.rare || Math.random() < 0.25;
     });
+    // a targeted campaign draws its audience in more often (two extra tickets
+    // each in the draw), but only jobs the venue is already famous enough for
+    if (S.campaign && S.campaign.jobs)
+    {
+        var extra = pool.filter(function (t) { return S.campaign.jobs.indexOf(t.id) >= 0; });
+        pool = pool.concat(extra, extra);
+    }
     if (pool.length === 0)
     {
         return;
     }
     var vt = pool[Math.floor(Math.random() * pool.length)];
     // now and then the person walking in is one of the regulars
-    var reg = pickVisitingRegular();
+    var reg = pickVisitingRegular(room);
     if (reg)
     {
         vt = vtypeById(reg.job);
@@ -7417,6 +8395,13 @@ function spawnVisitor(room)
     {
         v.regId = reg.id;
     }
+    // festival-goers walk in already in a good mood
+    if (S.campaign && S.campaign.sat)
+    {
+        v.sat += S.campaign.sat;
+    }
+    // and so does anyone arriving on a nice day
+    v.sat += weatherDef().sat || 0;
     VISITORS.push(v);
     S.money += S.fee;
     S.mon.feeIn += S.fee;
@@ -7438,7 +8423,8 @@ function spawnVisitor(room)
 
 function needDecayRates()
 {
-    return { hunger: 100 / 75, thirst: 100 / 60, toilet: 100 / 90, energy: 100 / 110 };
+    var th = weatherDef().thirst || 1;
+    return { hunger: 100 / 75, thirst: 100 / 60 * th, toilet: 100 / 90, energy: 100 / 110 };
 }
 
 function facilityForNeed(need, room)
@@ -7936,7 +8922,8 @@ function updateVisitor(v, dt)
             {
                 // decorations near the exhibit boost what it yields
                 var decoRp = 1 + decoAuraAt(obj2.x, obj2.y, 'auraRp', objRoom(obj2)) / 100;
-                var gain = Math.round(Math.max(1, Math.ceil(sp.rpY / 3)) * (v.vt.rpMul || 1) * buffMul('rp') * decoRp);
+                var treatRp = treatActive(obj2) ? (obj2.treat.rp || 1) : 1;
+                var gain = Math.round(Math.max(1, Math.ceil(sp.rpY / 3)) * (v.vt.rpMul || 1) * buffMul('rp') * decoRp * treatRp);
                 S.rp += gain;
                 addFloat(v.x, v.y - 26, '+' + gain + ' ' + THEME.text.rpWord, '#d0a0ff');
             }
@@ -7949,6 +8936,11 @@ function updateVisitor(v, dt)
             {
                 var cheers = ['최고!', '멋져!', '반가워!', '또 보러 올게!'];
                 addFloat(v.x, v.y - 34, obj2.nick + ' ' + cheers[Math.floor(Math.random() * cheers.length)], '#ffd0f0');
+            }
+            // an SNS campaign makes everyone a little more likely to post
+            if (S.campaign && S.campaign.viewFame && Math.random() < S.campaign.viewFame)
+            {
+                gainFame(1);
             }
             // streamers broadcast what they see
             if (v.vt.fameChance && Math.random() < v.vt.fameChance)
@@ -7991,7 +8983,8 @@ function updateVisitor(v, dt)
                 var fb = BUILD[fo.type];
                 // decorations near the shop loosen the purse strings
                 var decoTip = 1 + decoAuraAt(fo.x, fo.y, 'auraTip', objRoom(fo)) / 100;
-                var price = Math.round(fb.sell * (v.vt.spendMul || 1) * buffMul('income') * decoTip);
+                var campShop = (S.campaign && S.campaign.shop) ? S.campaign.shop : 1;
+                var price = Math.round(fb.sell * (v.vt.spendMul || 1) * buffMul('income') * decoTip * campShop);
                 if (fb.sell > 0 && v.money >= price)
                 {
                     v.money -= price;
@@ -8170,7 +9163,7 @@ function advanceSim(dtMs)
         // own street door - otherwise opening the annex would halve the crowd
         // in the main hall instead of adding to it. see roomTrafficMult() for
         // why this is deliberately less than 1:1.
-        S.spawnAcc += expectedPerDay() * roomTrafficMult() * (dtMs / DAY_MS);
+        S.spawnAcc += expectedPerDay() * roomTrafficMult() * inflowMult() * (dtMs / DAY_MS);
         S.spawnCd -= dt;
         // groupBurst is a countdown in seconds: a crowd streams in fast
         var bursting = (S.groupBurst > 0);
@@ -8250,6 +9243,8 @@ function onDayTick()
     tickTrophies();
     tickBonds();
     tickDiag();
+    tickCampaign();
+    tickWeather();
     if (S.showCd > 0)
     {
         S.showCd--;
@@ -8416,6 +9411,7 @@ function announceNewRoom(r)
             '<span class="small">화면 오른쪽 위의 버튼으로 오갈 수 있어요.<br>' +
             '두 곳 모두 손님이 따로 찾아옵니다 👥</span></div>',
         buttons: [{ label: '보러 가기!', cls: 'blue', onClick: function () { switchRoom(r); } },
+            photoButton(def.name + ' 개관'),
             { label: '나중에', cls: 'gray' }]
     });
 }
@@ -8440,7 +9436,12 @@ var REG_CAP = 12;
 var REG_HEART_TIERS = [0, 15, 40, 70, 100];
 // a regular never comes back sooner than this many days after the last visit.
 // a day is 1.25s at x1, so this keeps one face from popping in every few seconds
-var REG_VISIT_GAP = 10;
+var REG_VISIT_GAP = 30;
+// at most this many regulars touring one room at once. a visit lasts ~30
+// days, so without a ceiling the whole circle of twelve ends up on the floor
+// together and a star over a head stops meaning anything (seen 2026-10-21:
+// eight stars in one screenful)
+var REG_MAX_PRESENT = 3;
 var REG_WISH_HEART = 25;
 // happy leavers a month needs before it can produce a regular. a full room
 // only sees ~20 arrivals a month, so this is set well below that.
@@ -8630,9 +9631,21 @@ function tryBirthRegular(happy, force)
 }
 
 // called from spawnVisitor: maybe this arrival is one of the regulars
-function pickVisitingRegular()
+function pickVisitingRegular(room)
 {
     if (!S.regulars || S.regulars.length === 0 || regFriendSpawn || S.groupBurst > 0)
+    {
+        return null;
+    }
+    var present = 0;
+    for (var i = 0; i < VISITORS.length; i++)
+    {
+        if (VISITORS[i].regId && (VISITORS[i].room || 0) === room)
+        {
+            present++;
+        }
+    }
+    if (present >= REG_MAX_PRESENT)
     {
         return null;
     }
@@ -8704,6 +9717,17 @@ function regArrive(rg, v)
 
 function regGift(rg, v)
 {
+    // half the gifts are ingredients; a heart-4 friend brings the rare ones
+    if (Math.random() < 0.5)
+    {
+        var slot = dropIngredient(regTier(rg) >= 4 ? 0.5 : 0, true);
+        if (slot)
+        {
+            addEmote(v.x + 8, v.y - 30, 'gift');
+            showToast('🎁 ' + rg.name + '이(가) 재료를 줬어요! ' + ingLabel(slot));
+            return;
+        }
+    }
     var g = 150 + S.level * 120;
     S.money += g;
     S.mon.shopIn += g;
@@ -8721,14 +9745,15 @@ function regLeave(v)
         return;
     }
     rg.visits++;
-    // +2 per happy visit: hearts from visits alone reach 100 after ~50 visits
-    // (about 6 game years in a 1-hour session), and each answered wish is
-    // worth a dozen visits, so the wishes are the fast road. measured with a
-    // 2880-day run on 2026-10-21; +3 finished ten regulars inside one session.
+    // +3 per happy visit. it was +2 while regulars could all be on the floor
+    // at once (a 2880-day run finished ten of them inside one session at +3);
+    // REG_MAX_PRESENT now limits how often each one comes, so +3 is back to
+    // a pace of roughly one session to heart 5 for an early regular, with an
+    // answered wish still worth eight visits.
     var gain = 0;
     if (v.sat >= 65)
     {
-        gain = 2;
+        gain = 3;
     }
     else
     {
@@ -8792,7 +9817,7 @@ function regTierUp(rg, t)
                 '<b style="font-size:16px;color:#d04080;">' + regLabel(rg) + '</b><br>♥♥♥♥♥<br><br>' +
                 '<div class="regLine pink">「' + regStory(rg, 2) + '」</div><br>' +
                 '감사의 선물 💰 +' + fmt(g) + 'G · 💗 인기 +10</div>',
-            buttons: [{ label: '나도 고마워!', cls: '' }]
+            buttons: [photoButton(regLabel(rg) + ' 평생 단골'), { label: '나도 고마워!', cls: '' }]
         });
     }
 }
@@ -9355,6 +10380,14 @@ function completeRequest(r)
         S.buffs[r.rewardBuff] = (S.buffs[r.rewardBuff] || 0) + 1;
         facTxt += '<div style="margin-top:8px;background:#e8f4ff;border:2px solid #6aa8dd;border-radius:8px;padding:8px;text-align:center;">' + bf.icon + ' 영구 버프 획득!<br><b style="color:#2f6fb0;">「' + bf.name + '」 Lv' + S.buffs[r.rewardBuff] + '</b><br><span class="small">' + bf.desc + '</span></div>';
     }
+    if (Math.random() < 0.3)
+    {
+        var rqSlot = dropIngredient(rareChanceNow(0.15), true);
+        if (rqSlot)
+        {
+            parts.push('🧺 ' + ingLabel(rqSlot));
+        }
+    }
     var wishTxt = '';
     var wishReg = r.regId ? regById(r.regId) : null;
     if (wishReg)
@@ -9653,6 +10686,8 @@ function doFeed(o)
     }
     sfx('feed');
     showToast('🍴 먹이 시간! 물고기들이 신났다! (' + n + '명이 좋아함)');
+    // feeding is the aquarium's ingredient source
+    dropIngredient(rareChanceNow(0.1));
 }
 
 // ---------- expedition (museum feature) ----------
@@ -9696,6 +10731,12 @@ function finishExpedition()
     }
     checkDex();
     var bonusTxt = '';
+    var gotA = dropIngredient(0.3, true);
+    var gotB = dropIngredient(0.3, true);
+    if (gotA || gotB)
+    {
+        bonusTxt += '<br>🧺 복원 재료: ' + [gotA, gotB].filter(function (x) { return x; }).map(ingLabel).join(', ');
+    }
     if (Math.random() < 0.35)
     {
         var bonus = sp.cls * 150 + Math.floor(Math.random() * 400);
@@ -9735,6 +10776,11 @@ function playWithCat(o)
     }
     sfx('coin');
     showToast('🪀 ' + SPECIES[o.species].name + '이(가) 신났다! 기분 +25');
+    // playtime turns up snack ingredients now and then
+    if (Math.random() < 0.4)
+    {
+        dropIngredient(rareChanceNow(0.08));
+    }
 }
 
 // ---------- show stage (aquarium feature) ----------
@@ -9773,6 +10819,7 @@ function startShow(stage)
     }
     S.showCd = 6;
     S.showCount = (S.showCount || 0) + 1;
+    dropIngredient(rareChanceNow(0.15));
     SHOW = { objId: stage.id, sp: performer, t: 6 };
     var sw = oW(stage);
     var sh = oH(stage);
@@ -9947,12 +10994,20 @@ function monthEnd()
         S.month = 1;
         S.year++;
     }
+    // last month's numbers price the campaigns (revenue per visitor)
+    S.lastMon = { vis: rep.vis, feeIn: rep.feeIn, shopIn: rep.shopIn };
     S.mon = { vis: 0, feeIn: 0, shopIn: 0, maint: 0, happy: 0 };
     S.stormMonth = false;
 
     showMonthReport(rep);
     checkPromotion();
     tryBirthRegular(rep.happy);
+    // the supplier drops off one ingredient a month, so the workshop always
+    // has something to try even for a player who skips the theme activity
+    if (S.opened)
+    {
+        dropIngredient(rareChanceNow(0.1), true);
+    }
     if (rep.month === 12)
     {
         yearAwards();
@@ -10003,7 +11058,7 @@ function checkPromotion()
             body: '<div style="text-align:center;font-size:18px;color:#c07000;">' + starStr(next.lv) + '<br>「' + next.name + '」</div>' +
                 '<div style="text-align:center;margin-top:8px;">' + OWNER_NAME + ' ' + THEME.text.ownerTitle + ', 축하합니다!<br>등급이 올랐습니다! 보조금 +' + next.prize + 'G</div>' +
                 (unlockNote ? '<div style="margin-top:8px;background:#fff0c8;border:2px solid #e0b050;border-radius:8px;padding:8px;font-size:12px;text-align:center;">' + unlockNote + '</div>' : ''),
-            buttons: [{ label: '신난다!', cls: '' }]
+            buttons: [photoButton(next.name + ' 승급'), { label: '신난다!', cls: '' }]
         });
     }
 }
@@ -10046,7 +11101,12 @@ function yearlyRanking()
         body += '<div style="text-align:center;margin-top:8px;font-size:15px;color:#d04080;">' + THEME.text.rank1 + '</div>';
     }
     sfx('fanfare');
-    queueModal({ title: '🏆 ' + THEME.text.rankingTitle, body: body, buttons: [{ label: '확인', cls: '' }] });
+    var rkBtns = [{ label: '확인', cls: '' }];
+    if (rank === 1)
+    {
+        rkBtns.unshift(photoButton('전국 1위'));
+    }
+    queueModal({ title: '🏆 ' + THEME.text.rankingTitle, body: body, buttons: rkBtns });
 }
 
 // year-end award ceremony: best exhibit of the year
@@ -10096,7 +11156,7 @@ function checkDex()
     sfx('fanfare');
     queueModal({
         title: '📖 도감 완성!',
-        body: '<div style="text-align:center;">모든 ' + THEME.text.speciesWord + '를 모았습니다!<br><br>' +
+        body: '<div style="text-align:center;">모든 ' + THEME.text.speciesWord + '을(를) 모았습니다!<br><br>' +
             '<b style="font-size:16px;color:#d04080;">' + OWNER_NAME + ' ' + THEME.text.ownerTitle + '은(는)<br>진정한 컬렉터!</b><br><br>💰 +20,000G · 💗 인기 +100</div>',
         buttons: [{ label: '해냈다!', cls: '' }]
     });
@@ -10541,6 +11601,10 @@ function sfx(name)
             break;
         case 'click':
             beep(680, 0.035, 0, 'square', 0.03);
+            break;
+        case 'shutter':
+            beep(1800, 0.02, 0, 'square', 0.03);
+            beep(900, 0.04, 0.03, 'square', 0.03);
             break;
         case 'modal':
             beep(880, 0.05, 0, 'triangle', 0.04);
@@ -11096,10 +12160,238 @@ function openBuildPanel(tab)
     }
 }
 
-// ----- research panel -----
-function openResearchPanel()
+// ----- recipe workshop tab (v4.9) -----
+// up to two selected pantry slots; the same slot twice means "two of it"
+var WS_SEL = [];
+
+function fillWorkshopTab(body)
 {
+    pantryReady();
+    var book = recipeBook();
+    var head = document.createElement('div');
+    head.className = 'card';
+    head.innerHTML = '<div class="mid"><div class="nm">' + book.icon + ' ' + book.tab + ' (레시피 ' + S.recipes.length + '/' + RECIPE_SHAPE.length + ')</div>' +
+        '<div class="sub">재료 <b>두 개</b>를 골라 만들어 봐요. 만든 ' + book.item + '은(는) ' + THEME.text.enclosureWord + '를 탭해서 ' + book.use + '세요.<br>' +
+        '재료는 ' + (THEME.feature === 'feeding' ? '먹이 시간·공연' : (THEME.feature === 'expedition' ? '발굴' : '놀아주기')) +
+        ' · 단골 선물 · 의뢰 · 매달 납품으로 모여요. ✨ 귀한 재료는 ★3부터 나와요.</div></div>';
+    body.appendChild(head);
+
+    // pantry chips
+    var pc = document.createElement('div');
+    pc.className = 'card';
+    var pm = document.createElement('div');
+    pm.className = 'mid';
+    pm.innerHTML = '<div class="nm">🧺 재료</div>';
+    var chips = document.createElement('div');
+    chips.className = 'chipRow';
+    var slots = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    for (var i = 0; i < slots.length; i++)
+    {
+        (function (slot)
+        {
+            var n = S.pantry[slot] || 0;
+            var picked = WS_SEL.filter(function (s2) { return s2 === slot; }).length;
+            var c = document.createElement('button');
+            c.className = 'ingChip' + (picked ? ' on' : '') + (RARE_SLOTS.indexOf(slot) >= 0 ? ' rare' : '');
+            c.textContent = ingIcon(slot) + ' ' + ingName(slot) + ' ×' + n + (picked > 1 ? ' (2)' : '');
+            c.disabled = (n === 0);
+            c.addEventListener('click', function ()
+            {
+                sfx('click');
+                // tapping a picked chip again takes a second one if there is
+                // one, otherwise unpicks it
+                if (picked > 0 && (picked >= n || WS_SEL.length >= 2))
+                {
+                    WS_SEL = WS_SEL.filter(function (s2) { return s2 !== slot; });
+                }
+                else
+                {
+                    if (WS_SEL.length >= 2)
+                    {
+                        WS_SEL.shift();
+                    }
+                    WS_SEL.push(slot);
+                }
+                openResearchPanel('workshop');
+            });
+            chips.appendChild(c);
+        })(slots[i]);
+    }
+    pm.appendChild(chips);
+
+    // the pot
+    var a = WS_SEL[0];
+    var b = WS_SEL[1];
+    var pot = document.createElement('div');
+    pot.className = 'potRow';
+    var preview = '';
+    if (a && b)
+    {
+        var known = recipeForPair(a, b);
+        if (known && S.recipes.indexOf(known.id) >= 0)
+        {
+            preview = '→ 「' + recipeName(known.id) + '」';
+        }
+        else
+        {
+            preview = (S.recipeTried.indexOf(pairKey(a, b)) >= 0) ? '→ ✖ 실패했던 조합' : '→ ❓';
+        }
+    }
+    pot.innerHTML = '<span class="potSlot">' + (a ? ingLabel(a) : '?') + '</span> + <span class="potSlot">' + (b ? ingLabel(b) : '?') + '</span> <span class="small">' + preview + '</span>';
+    var mk = document.createElement('button');
+    mk.className = 'btn blue';
+    mk.textContent = book.icon + ' 만들기';
+    mk.disabled = !(a && b);
+    mk.addEventListener('click', function ()
+    {
+        var res = mixRecipe(a, b);
+        if (res)
+        {
+            if (res.fail)
+            {
+                showToast('😅 「' + book.failName + '」이(가) 나왔어요... 다른 조합을 해 봐요!');
+            }
+            else
+            {
+                if (!res.isNew)
+                {
+                    showToast(book.icon + ' 「' + recipeName(res.recipe.id) + '」 완성!');
+                }
+            }
+            // keep the selection only while it can be made again
+            var na = S.pantry[a] || 0;
+            var nb = S.pantry[b] || 0;
+            if ((a === b && na < 2) || na < 1 || nb < 1)
+            {
+                WS_SEL = [];
+            }
+            openResearchPanel('workshop');
+            updateHUD();
+        }
+    });
+    pot.appendChild(mk);
+    pm.appendChild(pot);
+    pc.appendChild(pm);
+    body.appendChild(pc);
+
+    // made items
+    var ic = document.createElement('div');
+    ic.className = 'card';
+    var ih = '<div class="mid"><div class="nm">🎁 만든 ' + book.item + '</div>';
+    var anyItem = false;
+    for (var k in S.items)
+    {
+        if (S.items[k] > 0)
+        {
+            anyItem = true;
+            ih += '<div class="sub">「' + recipeName(k) + '」 ×' + S.items[k] + ' — ' + recipeEffectText(k) + '</div>';
+        }
+    }
+    if (!anyItem)
+    {
+        ih += '<div class="sub">아직 없어요. 위에서 만들어 봐요!</div>';
+    }
+    else
+    {
+        ih += '<div class="small">' + THEME.text.enclosureWord + '를 탭하면 「🍽️ ' + book.item + ' ' + book.use + '」 버튼이 있어요.</div>';
+    }
+    ic.innerHTML = ih + '</div>';
+    body.appendChild(ic);
+
+    // recipe book: discovered in full, undiscovered with one ingredient shown
+    var rc = document.createElement('div');
+    rc.className = 'card';
+    var rh = '<div class="mid"><div class="nm">📖 레시피 북</div>';
+    for (var r = 0; r < RECIPE_SHAPE.length; r++)
+    {
+        var rs = RECIPE_SHAPE[r];
+        if (S.recipes.indexOf(rs.id) >= 0)
+        {
+            rh += '<div class="sub good">✔ 「' + recipeName(rs.id) + '」 ' + ingLabel(rs.a) + ' + ' + ingLabel(rs.b) + '<br>&nbsp;&nbsp;<span class="small">' + recipeEffectText(rs.id) + '</span></div>';
+        }
+        else
+        {
+            rh += '<div class="sub">❓ ??? — ' + ingLabel(rs.a) + ' + ?</div>';
+        }
+    }
+    rh += '<div class="small">실패한 조합 ' + S.recipeTried.length + '개는 기억해 둬요 (✖ 표시).</div></div>';
+    rc.innerHTML = rh;
+    body.appendChild(rc);
+}
+
+// pick which made item to use on an exhibit
+function showTreatModal(o)
+{
+    pantryReady();
+    var book = recipeBook();
+    queueModal({
+        title: '🍽️ ' + exhibitName(o) + '에게 ' + book.item,
+        body: '<div class="small" style="text-align:center;margin-bottom:6px;">한 번에 하나만 효과가 있어요. 새로 ' + book.use + '면 이전 효과는 바뀌어요.</div><div id="treatList"></div>',
+        buttons: [{ label: '닫기', cls: 'gray', onClick: function () { openObjectModal(o); } }],
+        onRender: function (bodyEl, closeFn)
+        {
+            var list = bodyEl.querySelector('#treatList');
+            for (var k in S.items)
+            {
+                if (S.items[k] <= 0)
+                {
+                    continue;
+                }
+                (function (id)
+                {
+                    var card = document.createElement('div');
+                    card.className = 'card';
+                    var mid = document.createElement('div');
+                    mid.className = 'mid';
+                    mid.innerHTML = '<div class="nm">「' + recipeName(id) + '」 ×' + S.items[id] + '</div><div class="sub">' + recipeEffectText(id) + '</div>';
+                    card.appendChild(mid);
+                    var act = document.createElement('div');
+                    act.className = 'act';
+                    var btn = document.createElement('button');
+                    btn.className = 'btn';
+                    btn.textContent = book.use;
+                    var perm = recipeIsPerm(recipeById(id));
+                    btn.disabled = perm && !!o.restored;
+                    btn.addEventListener('click', function ()
+                    {
+                        if (useItem(o, id))
+                        {
+                            closeFn();
+                            openObjectModal(o);
+                        }
+                    });
+                    act.appendChild(btn);
+                    card.appendChild(act);
+                    list.appendChild(card);
+                })(k);
+            }
+        }
+    });
+}
+
+// ----- research panel -----
+function openResearchPanel(tab)
+{
+    tab = tab || 'lab';
     var sh = panelShell(THEME.text.researchTitle + ' (보유 ' + THEME.text.rpWord + ': ' + fmt(S.rp) + ')');
+    var rtabs = document.createElement('div');
+    rtabs.className = 'tabRow';
+    var rt1 = document.createElement('button');
+    rt1.className = 'tabBtn' + (tab === 'lab' ? ' on' : '');
+    rt1.textContent = THEME.text.tbResearch;
+    var rt2 = document.createElement('button');
+    rt2.className = 'tabBtn' + (tab === 'workshop' ? ' on' : '');
+    rt2.textContent = recipeBook().icon + ' ' + recipeBook().tab;
+    rt1.addEventListener('click', function () { sfx('click'); openResearchPanel('lab'); });
+    rt2.addEventListener('click', function () { sfx('click'); openResearchPanel('workshop'); });
+    rtabs.appendChild(rt1);
+    rtabs.appendChild(rt2);
+    sh.root.insertBefore(rtabs, sh.body);
+    if (tab === 'workshop')
+    {
+        fillWorkshopTab(sh.body);
+        return;
+    }
     var isExpedition = (THEME.feature === 'expedition');
     if (isExpedition)
     {
@@ -11779,7 +13071,9 @@ function comboReqName(req)
 var INFO_TABS = [
     { id: 'status', label: '현황' },
     { id: 'diag', label: '진단' },
-    { id: 'regular', label: '단골' }
+    { id: 'promo', label: '홍보' },
+    { id: 'regular', label: '단골' },
+    { id: 'album', label: '앨범' }
 ];
 
 function openInfoPanel(tab)
@@ -11810,7 +13104,205 @@ function openInfoPanel(tab)
         fillDiagTab(sh.body);
         return;
     }
+    if (tab === 'promo')
+    {
+        fillPromoTab(sh.body);
+        return;
+    }
+    if (tab === 'album')
+    {
+        fillAlbumTab(sh.body);
+        return;
+    }
     fillStatusTab(sh.body);
+}
+
+function fillAlbumTab(body)
+{
+    var list = loadAlbum();
+    var head = document.createElement('div');
+    head.className = 'card';
+    head.innerHTML = '<div class="mid"><div class="nm">📷 앨범 (' + list.length + '/' + ALBUM_MAX + ')</div>' +
+        '<div class="sub">화면 오른쪽 아래 <b>📷</b> 버튼으로 언제든 찍을 수 있어요. 승급·1위·새 공간 같은 순간엔 <b>📷 기념사진</b> 버튼도 떠요.<br>' +
+        '사진을 누르면 크게 보여요. 아이패드에서는 큰 사진을 <b>길게 눌러</b> 사진 앱에 저장할 수 있어요.</div></div>';
+    body.appendChild(head);
+    if (list.length === 0)
+    {
+        var e = document.createElement('div');
+        e.className = 'small';
+        e.style.padding = '8px';
+        e.textContent = '아직 사진이 없어요. 멋진 순간을 찍어 봐요!';
+        body.appendChild(e);
+        return;
+    }
+    var grid = document.createElement('div');
+    grid.className = 'albumGrid';
+    // newest first
+    for (var i = list.length - 1; i >= 0; i--)
+    {
+        (function (idx, ph)
+        {
+            var cell = document.createElement('button');
+            cell.className = 'albumCell';
+            var im = document.createElement('img');
+            im.src = ph.img;
+            im.alt = ph.cap;
+            cell.appendChild(im);
+            var cap = document.createElement('div');
+            cap.className = 'albumCap';
+            cap.textContent = ph.cap;
+            cell.appendChild(cap);
+            cell.addEventListener('click', function () { sfx('click'); openPhotoModal(idx); });
+            grid.appendChild(cell);
+        })(i, list[i]);
+    }
+    body.appendChild(grid);
+}
+
+function openPhotoModal(idx)
+{
+    var list = loadAlbum();
+    var ph = list[idx];
+    if (!ph)
+    {
+        return;
+    }
+    queueModal({
+        title: '📷 ' + ph.cap,
+        body: '<div style="text-align:center;"><img class="albumBig selectable" src="' + ph.img + '" alt=""></div>',
+        buttons: [
+            {
+                label: '💾 내려받기', cls: 'blue',
+                onClick: function ()
+                {
+                    try
+                    {
+                        var a = document.createElement('a');
+                        a.href = ph.img;
+                        a.download = THEME.id + '-' + ph.t + '.jpg';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                    }
+                    catch (e)
+                    {
+                        showToast('이 기기에서는 사진을 길게 눌러 저장해 주세요');
+                    }
+                }
+            },
+            {
+                label: '🗑️ 지우기', cls: 'red',
+                onClick: function ()
+                {
+                    deletePhoto(idx);
+                    showToast('사진을 지웠어요');
+                    if (PANEL_OPEN)
+                    {
+                        openInfoPanel('album');
+                    }
+                }
+            },
+            { label: '닫기', cls: 'gray' }
+        ]
+    });
+}
+
+// brief white flash over the canvas when a photo is taken
+function flashScreen()
+{
+    var wrap = $('canvasWrap');
+    if (!wrap)
+    {
+        return;
+    }
+    var f = document.createElement('div');
+    f.className = 'shutterFlash';
+    wrap.appendChild(f);
+    setTimeout(function ()
+    {
+        if (f.parentNode)
+        {
+            f.parentNode.removeChild(f);
+        }
+    }, 450);
+}
+
+function fillPromoTab(body)
+{
+    var head = document.createElement('div');
+    head.className = 'card';
+    var cur = '';
+    if (S.campaign)
+    {
+        var pct = Math.round((1 - S.campaign.days / S.campaign.total) * 100);
+        cur = '<div class="diagAdvice">' + S.campaign.icon + ' <b>' + S.campaign.name + '</b> 진행 중 · 남은 ' + S.campaign.days + '일' +
+            '<div class="diagBar" style="margin-top:5px;"><span style="width:' + pct + '%;background:#5cb85c;"></span></div></div>';
+    }
+    else
+    {
+        if ((S.campCd || 0) > 0)
+        {
+            cur = '<div class="sub">다음 홍보까지 <b>' + S.campCd + '일</b> 쉬어요.</div>';
+        }
+    }
+    head.innerHTML = '<div class="mid"><div class="nm">📣 홍보 캠페인</div>' +
+        '<div class="sub">이곳은 늘 손님이 <b>꽉 차</b> 있어서, 홍보의 핵심은 <b>동시에 들어올 수 있는 손님 수</b>를 늘리는 거예요.<br>' +
+        '한 번에 하나만, 끝나면 잠깐 쉬어요. 가격은 지금 손님 한 명이 버는 돈에 맞춰 정해져요.</div>' + cur + '</div>';
+    body.appendChild(head);
+    for (var i = 0; i < CAMPAIGN_ORDER.length; i++)
+    {
+        (function (id)
+        {
+            var c = campaignDef(id);
+            var block = campaignBlock(id);
+            var locked = S.level < c.lvReq;
+            var card = document.createElement('div');
+            card.className = 'card' + (locked ? ' locked' : '');
+            var mid = document.createElement('div');
+            mid.className = 'mid';
+            var extra = Math.round(campaignExtraVisitors(c));
+            var eff = '동시 손님 <b>+' + c.cap + '명</b>' + (roomsOpen() > 1 ? '(방마다)' : '') + ' · ' + c.days + '일';
+            if (c.jobs)
+            {
+                eff += ' · ' + c.jobs.map(jobName).join('·') + ' 증가';
+            }
+            if (c.fame)
+            {
+                eff += ' · 인기 +' + (c.fame + S.level * 2);
+            }
+            if (c.sat)
+            {
+                eff += ' · 입장 만족 +' + c.sat;
+            }
+            if (c.shop)
+            {
+                eff += ' · 매장 매출 +' + Math.round((c.shop - 1) * 100) + '%';
+            }
+            mid.innerHTML = '<div class="nm">' + c.icon + ' ' + c.name + '</div>' +
+                '<div class="sub">' + c.desc + '</div>' +
+                '<div class="sub">' + eff + '</div>' +
+                '<div class="sub">💰 ' + fmt(campaignCost(id)) + 'G · 손님 최대 약 ' + extra + '명 더' +
+                (block && !locked ? ' · <b>' + block + '</b>' : '') + (locked ? ' · ' + block : '') + '</div>';
+            card.appendChild(mid);
+            var act = document.createElement('div');
+            act.className = 'act';
+            var btn = document.createElement('button');
+            btn.className = 'btn blue';
+            btn.textContent = '시작';
+            btn.disabled = !!block;
+            btn.addEventListener('click', function ()
+            {
+                if (startCampaign(id))
+                {
+                    openInfoPanel('promo');
+                    updateHUD();
+                }
+            });
+            act.appendChild(btn);
+            card.appendChild(act);
+            body.appendChild(card);
+        })(CAMPAIGN_ORDER[i]);
+    }
 }
 
 function fillDiagTab(body)
@@ -11942,7 +13434,14 @@ function openRegularModal(rg)
 function fillStatusTab(body)
 {
     var next = (S.level < LEVELS.length) ? LEVELS[S.level] : null;
+    var wd = weatherDef();
+    var wn = WEATHER[S.weatherNext];
     var html = '<div class="card"><div class="mid">' +
+        '<div class="nm">' + wd.icon + ' 오늘 날씨: ' + wd.name + ' <span class="small">(' + Math.max(1, S.weatherDays || 1) + '일 더)</span></div>' +
+        '<div class="sub">' + wd.desc + '</div>' +
+        (wn ? '<div class="sub">다음 예보: ' + wn.icon + ' ' + wn.name + '</div>' : '') +
+        '</div></div>';
+    html += '<div class="card"><div class="mid">' +
         '<div class="nm">' + starStr(S.level) + ' 「' + LEVELS[S.level - 1].name + '」</div>' +
         '<div class="sub">인기 ' + fmt(S.fame) + ' · 전국 ' + S.rank + '위 · 누적 관람객 ' + fmt(S.visTotal) + '명</div>' +
         (next ? '<div class="sub">다음 승급: 인기 ' + fmt(next.fame) + ' + 누적 관람객 ' + fmt(next.vis) + '명</div>' : '<div class="sub good">최고 등급 달성!</div>') +
@@ -12601,6 +14100,23 @@ function openObjectModal(o)
             (o.nick ? (bt ? bt.icon + ' <b>' + bt.name + '</b> · ' : '') + '함께한 지 ' + tenureText(o) + ' '
                 : '<span class="small">이름을 지어 주면 함께한 시간이 쌓여 칭호를 받아요 </span>') +
             '<button class="btn mini" id="btnNick">✏️ ' + (o.nick ? '이름 바꾸기' : '이름 짓기') + '</button></div>';
+        var itemTotal = 0;
+        pantryReady();
+        for (var ik in S.items)
+        {
+            itemTotal += Math.max(0, S.items[ik]);
+        }
+        var bk = recipeBook();
+        var treatLine = treatActive(o) ? '🍽️ 「' + recipeName(o.treat.id) + '」 효과 중 (' + treatDaysLeft(o) + '일) ' : '';
+        if (o.restored)
+        {
+            treatLine += '🏺 완벽 복원 ';
+        }
+        if (treatLine || itemTotal > 0)
+        {
+            bodyHtml += '<div class="nickRow">' + treatLine +
+                (itemTotal > 0 ? '<button class="btn mini" id="btnTreat">🍽️ ' + bk.item + ' ' + bk.use + ' (' + itemTotal + ')</button>' : '') + '</div>';
+        }
         // itemized appeal breakdown
         var apLines = [];
         apLines.push('기본(' + b.name + ') <b>+' + ap.base + '</b>');
@@ -12621,6 +14137,14 @@ function openObjectModal(o)
         if (ap.bondMult > 1)
         {
             apLines.push(bt.icon + ' ' + bt.name + ' 칭호 <b>×' + ap.bondMult.toFixed(2) + '</b>');
+        }
+        if (ap.treatMult > 1)
+        {
+            apLines.push('🍽️ ' + recipeName(o.treat.id) + ' <b>×' + ap.treatMult.toFixed(2) + '</b> (' + treatDaysLeft(o) + '일)');
+        }
+        if (ap.restoreMult > 1)
+        {
+            apLines.push('🏺 완벽 복원 <b>×' + ap.restoreMult.toFixed(2) + '</b>');
         }
         bodyHtml += '<div style="margin-top:6px;background:#fff0c8;border:2px solid #e0b050;border-radius:8px;padding:6px 8px;font-size:12px;text-align:left;">📊 매력 계산<br>' + apLines.join('<br>') + '</div>';
         if (isMood)
@@ -12681,6 +14205,16 @@ function openObjectModal(o)
         buttons: btns,
         onRender: function (bodyEl, closeFn)
         {
+            var tb = bodyEl.querySelector('#btnTreat');
+            if (tb)
+            {
+                tb.addEventListener('click', function ()
+                {
+                    sfx('click');
+                    closeFn();
+                    showTreatModal(o);
+                });
+            }
             var nb = bodyEl.querySelector('#btnNick');
             if (nb)
             {
@@ -12855,7 +14389,7 @@ function updateHUD()
         // time-of-day icon follows the ambient light cycle
         var phase = (nightFactor() > 0.5) ? '🌙' : ((duskFactor() > 0.3) ? '🌆' : '☀️');
         var pauseTag = (PAUSED || PANEL_OPEN || MODE.kind !== 'normal') ? '⏸ ' : '';
-        $('hudDate').textContent = pauseTag + phase + seasonIcon + ' ' + S.year + '년차 ' + S.month + '월 ' + S.day + '일';
+        $('hudDate').textContent = pauseTag + phase + seasonIcon + weatherDef().icon + ' ' + S.year + '년차 ' + S.month + '월 ' + S.day + '일';
     }
     else
     {
@@ -12871,6 +14405,12 @@ function updateHUD()
         var panelOpen = $('panelHost').children.length > 0;
         var show = !S.opened && !modalShowing && !panelOpen && MODE.kind === 'normal';
         ob.style.display = show ? 'block' : 'none';
+    }
+    var pb = $('photoBtn');
+    if (pb)
+    {
+        var covered = modalShowing || $('panelHost').children.length > 0 || MODE.kind !== 'normal';
+        pb.style.display = covered ? 'none' : 'block';
     }
     var ts = $('tbSpecial');
     if (ts)
@@ -13882,9 +15422,13 @@ function renderWorld()
         }
     }
 
+    // weather: rain streaks and a mood tint. drawn before the seasonal
+    // particles; rain replaces them (petals do not fall in a downpour)
+    var wthr = S.opened ? S.weather : null;
+    drawWeather(wthr);
     // seasonal particles (petals / leaves / snow)
     var season = seasonOf(S.month);
-    if (season !== 'summer' && S.opened)
+    if (season !== 'summer' && S.opened && wthr !== 'rain')
     {
         var pcol = (season === 'spring') ? '#ffb8d8' : (season === 'autumn') ? '#e8933a' : '#ffffff';
         ctx.fillStyle = pcol;
@@ -14014,6 +15558,11 @@ function renderWorld()
             bannerY += 22;
         }
     }
+    if (S.campaign)
+    {
+        drawBanner(S.campaign.icon + ' ' + S.campaign.name + ' 중! (' + S.campaign.days + '일)', bannerY, 'rgba(200,110,30,0.9)');
+        bannerY += 22;
+    }
     if (S.groupBurst > 0)
     {
         drawBanner('🎒 단체 손님이 몰려오는 중!', bannerY, 'rgba(40,120,80,0.9)');
@@ -14055,6 +15604,48 @@ function drawThoughts()
         ctx.fillText(THOUGHT_ICON[v.thought.kind] || '💭', bx, by + 4);
         ctx.textAlign = 'left';
         ctx.globalAlpha = 1;
+    }
+}
+
+function drawWeather(kind)
+{
+    if (!kind)
+    {
+        return;
+    }
+    var W = usableW() * TS;
+    var H = MAP_H * TS;
+    var tint = { cloudy: 'rgba(90,100,120,0.08)', rain: 'rgba(60,80,120,0.14)', heat: 'rgba(255,150,60,0.07)', snow: 'rgba(200,220,255,0.08)' }[kind];
+    if (tint)
+    {
+        ctx.fillStyle = tint;
+        ctx.fillRect(0, 0, W, H);
+    }
+    if (kind === 'rain')
+    {
+        ctx.strokeStyle = 'rgba(190,215,255,0.45)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (var i = 0; i < 60; i++)
+        {
+            var x = ((i * 89) % W + GAME_TIME * 40) % W;
+            var y = ((i * 47) % H + GAME_TIME * 260) % (H + 20) - 10;
+            ctx.moveTo(x, y);
+            ctx.lineTo(x - 3, y + 9);
+        }
+        ctx.stroke();
+    }
+    if (kind === 'snow')
+    {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        for (var s = 0; s < 26; s++)
+        {
+            var sx = ((s * 71) % W) + Math.sin(GAME_TIME * 0.8 + s) * 14;
+            var sy = ((s * 37) % H + GAME_TIME * (18 + (s % 3) * 6)) % (H + 10) - 5;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 1.6 + (s % 2), 0, Math.PI * 2);
+            ctx.fill();
+        }
     }
 }
 
@@ -14538,6 +16129,11 @@ function bindInput()
 
     document.addEventListener('contextmenu', function (e)
     {
+        // album photos keep the native menu so they can be saved
+        if (e.target && e.target.classList && e.target.classList.contains('albumBig'))
+        {
+            return;
+        }
         e.preventDefault();
     });
 }
@@ -14701,6 +16297,11 @@ function boot()
     document.getElementById('tbInfo').addEventListener('click', function () { sfx('click'); cancelPlaceMode(); openInfoPanel(); });
     document.getElementById('tbMenu').addEventListener('click', function () { sfx('click'); cancelPlaceMode(); openMenuPanel(); });
     document.getElementById('btnSpeed').addEventListener('click', cycleSpeed);
+    document.getElementById('photoBtn').addEventListener('click', function ()
+    {
+        initAudio();
+        takePhoto('');
+    });
     document.getElementById('btnPlaceCancel').addEventListener('click', function () { sfx('click'); cancelPlaceMode(); });
     document.getElementById('btnPlaceRotate').addEventListener('click', function () { rotateGhost(); });
     document.addEventListener('keydown', function (e)
