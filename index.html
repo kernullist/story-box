@@ -272,6 +272,108 @@ html, body
     border-color: #7a4a1a;
 }
 
+/* ---------- regular customers (v4.7) ---------- */
+.regLine
+{
+    background: #fff8e0;
+    border: 2px solid #e0b050;
+    border-radius: 8px;
+    padding: 7px 9px;
+    margin: 4px 0;
+    font-size: 13px;
+    text-align: center;
+}
+
+.regLine.pink
+{
+    background: #fff0f6;
+    border-color: #e090b0;
+}
+
+.regLine.locked
+{
+    background: #eee6d6;
+    border-color: #c8b890;
+    color: #8a7a5a;
+}
+
+/* ---------- exhibit nicknames (v4.7) ---------- */
+.nickRow
+{
+    margin-top: 5px;
+    font-size: 12px;
+}
+
+.btn.mini
+{
+    padding: 3px 8px;
+    font-size: 12px;
+    min-width: 0;
+}
+
+.nickInput
+{
+    display: block;
+    width: 70%;
+    margin: 8px auto 4px;
+    padding: 8px;
+    font-size: 18px;
+    font-family: inherit;
+    text-align: center;
+    border: 3px solid #b08a3a;
+    border-radius: 10px;
+}
+
+/* ---------- diagnosis tab (v4.7) ---------- */
+.diagAdvice
+{
+    margin-top: 6px;
+    padding: 7px 9px;
+    background: #fff0c8;
+    border: 2px solid #e0b050;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.diagRow
+{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 5px 0;
+}
+
+.diagLbl
+{
+    flex: 0 0 74px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.diagBar
+{
+    flex: 1;
+    height: 12px;
+    background: #efe2c2;
+    border: 2px solid #b08a3a;
+    border-radius: 7px;
+    overflow: hidden;
+}
+
+.diagBar span
+{
+    display: block;
+    height: 100%;
+}
+
+.diagNum
+{
+    flex: 0 0 28px;
+    text-align: right;
+    font-weight: 800;
+}
+
 /* ---------- list cards ---------- */
 .card
 {
@@ -949,7 +1051,7 @@ input[type="range"]
         <button class="tbBtn" id="tbResearch">🔬 연구</button>
         <button class="tbBtn" id="tbSpecial" style="display:none;">📜 기획전</button>
         <button class="tbBtn" id="tbRequest">📋 의뢰</button>
-        <button class="tbBtn" id="tbInfo">📊 정보</button>
+        <button class="tbBtn" id="tbInfo">📊 경영</button>
         <button class="tbBtn" id="tbMenu">⚙️ 메뉴</button>
     </div>
     <div id="dim"></div>
@@ -1007,7 +1109,7 @@ var OWNER_MAX = 8;
 var OWNER_NAME = '주인공';      // fallback only - replaced by setOwnerName()
 
 // shown in the launcher/menu so a stale cached client is easy to spot
-var GAME_VER = '4.6';
+var GAME_VER = '4.7';
 
 var TS = 32;            // tile size in world px
 var WALL_H = 58;        // back wall height above the map (world px)
@@ -1379,6 +1481,80 @@ var VTYPES = [
     { id: 'fire',    name: '소방관',   unlockFame: 320, money: [800, 2100],  speed: 58, hair: '#282018', body: '#e04828', pants: '#3a4048', skin: '#f0c890', quotaBonus: 2, desc: '든든한 체력! 오래오래 둘러봐요' },
     { id: 'idol',    name: '아이돌',   unlockFame: 380, money: [1500, 4000], speed: 46, hair: '#f070b0', body: '#fff0f8', pants: '#f8c8e0', skin: '#ffe0b8', fameChance: 0.35, rare: true, desc: '팬들이 몰려와요! 인기가 크게 올라요' }
 ];
+
+// ---------- regular customers (v4.7) ----------
+// a regular is a visitor who keeps coming back. they are born from the crowd
+// (see tryBirthRegular in game.js), get a name from the pool that fits their
+// job, and open up a three-part story as the player wins their heart.
+//
+// story lines use display-time tokens, filled by fillRegTokens() in game.js
+// when a line is shown - NOT at load time, for the same reason as %N%:
+//   %N% player name   %T% honorific (관장님/사장님)
+//   %P% venue word    %F% what is on show (물고기/유물/냥이)
+// write sentences so no Korean particle hangs directly off %P% or %F%; their
+// final consonant differs between themes (수족관 vs 냥카페).
+var REG_NAMES = {
+    young: ['민지', '도윤', '서아', '하준', '지우', '예린', '시우', '하린', '유찬', '소율', '준서', '다은', '태오', '채원'],
+    adult: ['수현', '지훈', '혜진', '동현', '미영', '성민', '은지', '재원', '보라', '현우', '정아', '상철'],
+    elder: ['말순', '영자', '복희', '순덕', '춘자', '옥분']
+};
+
+var REG_NAME_POOL = {
+    kid: 'young', boy: 'young', girl: 'young', athlete: 'young', youtuber: 'young', idol: 'young',
+    grandma: 'elder'
+};
+
+// [first visit, heart 3, heart 5]
+var REG_STORIES = {
+    kid: ['%P%에 오면 %F% 친구들이 나한테 손 흔드는 것 같아요! 또 올게요!',
+        '학교에서 여기 그림을 그렸는데 상을 받았어요! 다 여기 덕분이에요.',
+        '저 커서 %N% %T%처럼 멋진 사람이 될 거예요. 약속해요!'],
+    boy: ['학원 가기 전에 잠깐 들렀는데... 시간 가는 줄 몰랐어요!',
+        '친구들한테 여기 자랑했더니 다들 오고 싶대요. 제가 가이드 해 줄 거예요!',
+        '시험 망쳐서 우울했는데 여기 오면 기운이 나요. 고마워요, %T%!'],
+    girl: ['여기 너무 예뻐요! 사진 백 장은 찍은 것 같아요!',
+        '제 SNS 배경 사진이 전부 여기예요. 친구들이 어디냐고 난리예요!',
+        '꿈이 생겼어요. 이런 곳에서 일하는 거예요! 그때 저 뽑아 주실 거죠?'],
+    lady: ['조용하고 우아한 곳이네요. 차 한잔하며 오래 머물고 싶어요.',
+        '요즘 힘든 일이 많았는데, 여기만 오면 마음이 편해져요.',
+        '덕분에 다시 웃게 됐어요. %N% %T%, 정말 고마워요.'],
+    man: ['아이들 손에 이끌려 왔는데... 아빠가 더 신났네요, 하하!',
+        '주말마다 가족이랑 여기 오는 게 우리 집 규칙이 됐어요.',
+        '우리 아이 첫 그림일기가 여기 이야기였어요. 평생 기억할 거예요.'],
+    office: ['점심시간 30분, 여기서 보내는 게 하루 중 제일 좋아요.',
+        '회사 동료들까지 데려왔어요. 이제 팀 회식도 이 근처에서 해요!',
+        '승진했어요! 힘들 때마다 여기 와서 버틴 덕분이에요.'],
+    grandma: ['아이고, 늙은이가 와도 괜찮은 곳이구먼. 천천히 둘러볼게.',
+        '손주 녀석 데려왔더니 좋아서 펄쩍 뛰더라. 고마워요.',
+        '%N% %T%, 우리 동네에 이런 곳을 만들어 줘서 고마워. 오래오래 건강해요.'],
+    artist: ['빛이 참 아름다운 곳이에요. 다음엔 스케치북을 가져와야겠어요.',
+        '여기서 그린 그림으로 작은 전시회를 열게 됐어요!',
+        '제 대표작 제목이 「%P%의 오후」예요. 이곳이 저의 뮤즈랍니다.'],
+    youtuber: ['여러분~ 오늘은 숨은 명소에 왔습니다! 구독 좋아요~!',
+        '여기 소개한 영상이 조회수 10만을 넘었어요! 대박!',
+        '구독자 100만 기념 영상도 여기서 찍을래요. %T%도 출연해 주세요!'],
+    rich: ['흠, 제법 괜찮군. 마음에 들면 후원도 생각해 보지.',
+        '내 컬렉션보다 여기가 더 즐겁다니, 놀라운 일이야.',
+        '돈으로 살 수 없는 걸 여기서 찾았네. %N% %T%, 앞으로도 응원하겠소.'],
+    athlete: ['운동 끝나고 쿨다운엔 역시 여기죠! 한 바퀴 더!',
+        '대회 전날엔 꼭 여기 와서 마음을 다잡아요.',
+        '금메달 땄어요!! 인터뷰에서 여기 이야기 했어요. 보셨죠?'],
+    scholar: ['흥미롭군요. 이 %F% 배치에는 분명 깊은 의도가 있어요.',
+        '여기서 관찰한 내용으로 논문을 쓰고 있답니다.',
+        '논문이 학회 최우수상을 받았어요. 감사의 글에 이곳 이름을 넣었지요.'],
+    nurse: ['야간 근무 끝나고 들렀어요. 여기 공기가 참 따뜻하네요.',
+        '환자분들께 여기 사진을 보여 드리면 다들 웃으세요.',
+        '소아병동에 여기 그림을 걸었어요. 아이들이 제일 좋아하는 벽이에요.'],
+    chef: ['음, 매점 메뉴가 의외로 괜찮은데요? 셰프로서 인정합니다.',
+        '여기서 영감을 받아 새 메뉴를 만들었어요. 이름은 비밀!',
+        '제 식당 시그니처 메뉴 이름이 「%P% 스페셜」이 됐어요. 놀러 오세요!'],
+    fire: ['비번 날엔 여기서 쉬는 게 최고죠. 마음이 놓여요.',
+        '안전 점검 겸 왔는데... 완벽하네요! 그리고 너무 재밌어요.',
+        '힘든 출동 뒤엔 늘 여기가 생각나요. 지켜 주고 싶은 곳이에요.'],
+    idol: ['쉿, 변장하고 왔어요! 여기 진짜 힐링 되네요~',
+        '새 앨범 재킷 촬영지로 여기 어떨까 매니저랑 얘기 중이에요!',
+        '콘서트에서 제일 좋아하는 곳이 여기라고 말해 버렸어요. 헤헤!']
+};
 
 // ---------- floor tiles ----------
 // painted on empty walkable tiles; visitors standing on them get the effect
@@ -1837,6 +2013,8 @@ var THEME_AQUA = {
         rpWord: '연구P',
         unlockVerb: '연구',
         speciesWord: '어종',
+        venueWord: '수족관',
+        friendWord: '물고기',
         enclosureWord: '수조',
         emptyFull: '수조가 비어있습니다!',
         stockVerb: '입주',
@@ -1959,6 +2137,8 @@ var THEME_MUSEUM = {
         rpWord: '발굴P',
         unlockVerb: '발굴',
         speciesWord: '유물',
+        venueWord: '박물관',
+        friendWord: '유물',
         enclosureWord: '전시대',
         emptyFull: '전시대가 비어있습니다!',
         stockVerb: '전시',
@@ -2081,6 +2261,8 @@ var THEME_CAT = {
         rpWord: '간식P',
         unlockVerb: '입양',
         speciesWord: '고양이',
+        venueWord: '냥카페',
+        friendWord: '냥이',
         enclosureWord: '자리',
         emptyFull: '이 자리가 비어있습니다!',
         stockVerb: '배치',
@@ -2978,13 +3160,21 @@ function verifyOwnerTokens()
 // ("<name> 아쿠아리움", drawn on the canvas) inside the venue.
 function sanitizeOwnerName(raw)
 {
+    return sanitizeName(raw, OWNER_MAX);
+}
+
+// shared by every player-typed name (owner, exhibit nicknames). same rule for
+// all of them: strip markup characters instead of escaping, collapse spaces,
+// cap the length.
+function sanitizeName(raw, max)
+{
     var s = String(raw === null || raw === undefined ? '' : raw);
     s = s.replace(/[<>&"'\\]/g, '');
     s = s.replace(/\s+/g, ' ');
     s = s.replace(/^ +| +$/g, '');
-    if (s.length > OWNER_MAX)
+    if (s.length > max)
     {
-        s = s.substring(0, OWNER_MAX);
+        s = s.substring(0, max);
     }
     return s;
 }
@@ -3204,6 +3394,15 @@ function drawVisitor(ctx, v, x, y)
     ctx.fillStyle = 'rgba(20,14,30,0.18)';
     ctx.fillRect(sx + 2, sy + 16, 12, 6);
     ctx.restore();
+    // regulars wear a small bobbing star so the player can pick them out
+    // of the crowd and tap them
+    if (v.regId)
+    {
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⭐', x, sy - 2 + Math.sin(GAME_TIME * 4 + v.regId) * 1.5);
+        ctx.textAlign = 'left';
+    }
 }
 
 // ---------- fish / animal shapes ----------
@@ -4919,7 +5118,7 @@ function drawEmote(ctx, kind, x, y)
     var map = {
         heart: '💗', coin: '💰', rp: '🔬', angry: '💢',
         hunger: '🍔', thirst: '🥤', toilet: '🚻', energy: '💤',
-        camera: '📸', note: '🎵', sparkle: '✨'
+        camera: '📸', note: '🎵', sparkle: '✨', gift: '🎁'
     };
     ctx.fillText(map[kind] || '♥', x, y);
     ctx.textAlign = 'left';
@@ -4997,6 +5196,29 @@ function iconForFloor(id)
     return url;
 }
 
+// front-facing portrait of a visitor job, for regular customer cards
+function iconForJob(job)
+{
+    var key = 'job_' + job;
+    if (iconCache[key])
+    {
+        return iconCache[key];
+    }
+    var t = vtypeById(job) || VTYPES[0];
+    var pal = { h: t.hair, s: t.skin, e: '#18181e', b: t.body, p: t.pants, k: '#241c16' };
+    var px = 4;
+    var cv = document.createElement('canvas');
+    cv.width = 12 * px;
+    cv.height = 16.5 * px;
+    var c = cv.getContext('2d');
+    c.fillStyle = '#fff3d0';
+    c.fillRect(0, 0, cv.width, cv.height);
+    drawPix(c, VIS_DOWN_A, pal, 2 * px, 3 * px, px, false);
+    var url = cv.toDataURL();
+    iconCache[key] = url;
+    return url;
+}
+
 function iconForSpecies(id)
 {
     var key = THEME.id + '_s_' + id;
@@ -5061,7 +5283,7 @@ function defaultState()
         spLv: lv,
         combosDone: [],
         visTotal: 0,
-        mon: { vis: 0, feeIn: 0, shopIn: 0, maint: 0 },
+        mon: { vis: 0, feeIn: 0, shopIn: 0, maint: 0, happy: 0 },
         rank: 50,
         rank1Done: false,
         bailouts: 0,
@@ -5090,6 +5312,11 @@ function defaultState()
         specialCount: 0,
         dexDone: false,
         tutorialDone: false,
+        // regular customers (v4.7): see tryBirthRegular()
+        regulars: [],
+        regSeq: 1,
+        // satisfaction diagnosis counters (v4.7): see diagBad()/diagGood()
+        diag: emptyDiag(),
         // per-room save data, indexed the same as THEME.rooms. kept separate
         // from THEME.rooms (which holds the fixed outline/entrance) because
         // this half is player progress and has to survive in the save file.
@@ -5114,6 +5341,10 @@ function newGame()
     VISITORS = [];
     FLOATS = [];
     EMOTES = [];
+    // runtime lists that describe the PREVIOUS game's crowd. S.diag is reset by
+    // defaultState(), so a stale feed would contradict the fresh scores
+    THOUGHT_FEED = [];
+    LAST_HAPPY_JOBS = [];
     objIdSeq = 1;
     // starter layout: one small enclosure with the starter species
     var o = { id: objIdSeq++, type: 'small', x: 4, y: 6, species: THEME.starter, lv: 1, mood: 80, room: 0 };
@@ -5193,6 +5424,30 @@ function loadGame()
         {
             S.decoOwned = {};
         }
+        // regulars (v4.7). a save code from a newer build could carry entries
+        // for a job this build does not know - drop those rather than crash
+        if (!Array.isArray(S.regulars))
+        {
+            S.regulars = [];
+        }
+        S.regulars = S.regulars.filter(function (rg) { return rg && REG_STORIES[rg.job]; });
+        for (var rgi = 0; rgi < S.regulars.length; rgi++)
+        {
+            if (!(S.regSeq > S.regulars[rgi].id))
+            {
+                S.regSeq = S.regulars[rgi].id + 1;
+            }
+        }
+        if (!S.mon || typeof S.mon !== 'object')
+        {
+            S.mon = { vis: 0, feeIn: 0, shopIn: 0, maint: 0, happy: 0 };
+        }
+        if (!S.mon.happy)
+        {
+            S.mon.happy = 0;
+        }
+        diagReady();
+        THOUGHT_FEED = [];
         // pre-rework saves have requests that were auto-tracked; treat any
         // request without the accept flag as already accepted so nothing stalls
         if (S.requests)
@@ -5316,6 +5571,15 @@ function loadGame()
             }
         }
         objIdSeq = maxId + 1;
+        // residents from before v4.7 have no move-in day; start counting now
+        var today = absDay();
+        for (var bi = 0; bi < S.objects.length; bi++)
+        {
+            if (S.objects[bi].species && S.objects[bi].since === undefined)
+            {
+                S.objects[bi].since = today;
+            }
+        }
         rebuildGrid();
         return true;
     }
@@ -6313,6 +6577,11 @@ function stockTank(o, spId)
     S.money -= sp.stock;
     o.species = spId;
     o.mood = 80;
+    // a new resident starts its own story: the old one's name and the time
+    // it spent here leave with it
+    o.since = absDay();
+    delete o.nick;
+    delete o.bondShown;
     addFloat((o.x + 0.5) * TS, o.y * TS, sp.name + ' ' + THEME.text.stockFloat, '#a0e8ff');
     sfx('place');
     checkCombos();
@@ -6326,7 +6595,7 @@ function tankAppealParts(o)
     var parts = {
         base: b.base, sp: 0, spLv: 1, aura: 0, auraCapped: false,
         comboMult: 1 + S.combosDone.length * 0.06,
-        moodMult: 1, compatMult: 1, specialMult: 1, buffMult: 1, total: 1
+        moodMult: 1, compatMult: 1, specialMult: 1, buffMult: 1, bondMult: 1, total: 1
     };
     if (!o.species)
     {
@@ -6372,8 +6641,134 @@ function tankAppealParts(o)
         }
     }
     parts.buffMult = buffMul('appeal');
-    parts.total = (parts.base + parts.sp + parts.aura) * parts.comboMult * parts.moodMult * parts.compatMult * parts.specialMult * parts.buffMult;
+    // named exhibits that have lived here a long time draw a small crowd of
+    // their own (capped at +10% - see BOND_TITLES)
+    var bt = bondTitle(o);
+    parts.bondMult = bt ? 1 + bt.pct / 100 : 1;
+    parts.total = (parts.base + parts.sp + parts.aura) * parts.comboMult * parts.moodMult * parts.compatMult * parts.specialMult * parts.buffMult * parts.bondMult;
     return parts;
+}
+
+// ---------- exhibit nicknames (v4.7) ----------
+// the player can name the resident of an exhibit. a named resident that has
+// lived here long enough earns a title and a small appeal bonus. a year is
+// 12 * DAYS_PER_MONTH days (6 minutes at x1), so a title can be earned inside
+// one long session.
+var NICK_MAX = 6;
+var BOND_TITLES = [
+    { days: 12 * 24 * 5, name: '레전드', icon: '👑', pct: 10 },
+    { days: 12 * 24 * 3, name: '베테랑', icon: '🎖️', pct: 6 },
+    { days: 12 * 24 * 1, name: '단짝', icon: '🤝', pct: 3 }
+];
+
+function bondDays(o)
+{
+    if (!o.species || o.since === undefined)
+    {
+        return 0;
+    }
+    return Math.max(0, absDay() - o.since);
+}
+
+// title only for NAMED residents: naming is what makes it "yours"
+function bondTitle(o)
+{
+    if (!o.nick)
+    {
+        return null;
+    }
+    var d = bondDays(o);
+    for (var i = 0; i < BOND_TITLES.length; i++)
+    {
+        if (d >= BOND_TITLES[i].days)
+        {
+            return BOND_TITLES[i];
+        }
+    }
+    return null;
+}
+
+function bondLevel(o)
+{
+    var t = bondTitle(o);
+    return t ? BOND_TITLES.length - BOND_TITLES.indexOf(t) : 0;
+}
+
+// tenure as years and months
+function tenureText(o)
+{
+    var d = bondDays(o);
+    var y = Math.floor(d / (12 * DAYS_PER_MONTH));
+    var m = Math.floor((d % (12 * DAYS_PER_MONTH)) / DAYS_PER_MONTH);
+    if (y > 0)
+    {
+        return y + '년' + (m > 0 ? ' ' + m + '개월' : '');
+    }
+    if (m > 0)
+    {
+        return m + '개월';
+    }
+    return d + '일';
+}
+
+// nickname plus species when named, plain species name otherwise
+function exhibitName(o)
+{
+    if (!o.species)
+    {
+        return '';
+    }
+    var sp = SPECIES[o.species].name;
+    return o.nick ? o.nick + '(' + sp + ')' : sp;
+}
+
+function setNick(o, raw)
+{
+    var clean = sanitizeName(raw, NICK_MAX);
+    if (!clean)
+    {
+        delete o.nick;
+        delete o.bondShown;
+        return '';
+    }
+    o.nick = clean;
+    // a title already earned before naming is not re-announced
+    o.bondShown = bondLevel(o);
+    return clean;
+}
+
+// daily: announce a named resident reaching a new title
+function tickBonds()
+{
+    for (var i = 0; i < S.objects.length; i++)
+    {
+        var o = S.objects[i];
+        if (!o.nick)
+        {
+            continue;
+        }
+        var lv = bondLevel(o);
+        if (lv > (o.bondShown || 0))
+        {
+            o.bondShown = lv;
+            var t = bondTitle(o);
+            sfx('levelup');
+            if (lv >= BOND_TITLES.length)
+            {
+                queueModal({
+                    title: t.icon + ' ' + o.nick + ' — ' + t.name + '!',
+                    body: '<div style="text-align:center;"><img src="' + iconForSpecies(o.species) + '" style="width:44px;height:44px;"><br>' +
+                        '<b style="font-size:16px;color:#c07000;">' + exhibitName(o) + '</b>와(과) 함께한 지 <b>' + tenureText(o) + '</b>!<br><br>' +
+                        '이제 모두가 아는 <b>' + t.name + '</b>이(가) 됐어요.<br>매력 <b>+' + t.pct + '%</b></div>',
+                    buttons: [{ label: '앞으로도 잘 부탁해!', cls: '' }]
+                });
+            }
+            else
+            {
+                showToast(t.icon + ' ' + exhibitName(o) + '이(가) 「' + t.name + '」이(가) 됐어요! 매력 +' + t.pct + '%');
+            }
+        }
+    }
 }
 
 function tankAppeal(o)
@@ -6601,6 +6996,44 @@ function checkCombos()
 }
 
 // fame gain with diminishing returns at high fame
+// diagnosis readout for one finished exhibit view (counts only)
+function noteViewDiag(v, o, parts)
+{
+    var vr = v.room || 0;
+    // complain about the crush only when the room is genuinely packed, and
+    // only once per visitor - a full room is normal late game, not a fault
+    if (!v.crowdNoted && roomVisitorCount(vr) >= maxVisitorsNow() * 0.95)
+    {
+        v.crowdNoted = true;
+        if (Math.random() < 0.2)
+        {
+            diagBad(v, 'crowd');
+        }
+    }
+    // "weak" grows with the grade, so the bar rises as the venue does; the
+    // starter exhibit at grade 1 sits just under it on purpose (upgrade me)
+    if (parts.total < 6 + S.level * 2.5 && Math.random() < 0.25)
+    {
+        diagBad(v, 'boring');
+    }
+    else
+    {
+        diagGood(v, 'fun', parts.total >= 30);
+    }
+    if (parts.aura > 0 || decoAuraAt(o.x, o.y, 'auraRp', objRoom(o)) > 0 || decoAuraAt(o.x, o.y, 'auraTip', objRoom(o)) > 0)
+    {
+        diagGood(v, 'amb', false);
+    }
+    else
+    {
+        if (!v.dullNoted && Math.random() < 0.15)
+        {
+            v.dullNoted = true;
+            diagBad(v, 'dull');
+        }
+    }
+}
+
 function gainFame(n)
 {
     var chance = 70 / (70 + S.fame);
@@ -6612,6 +7045,215 @@ function gainFame(n)
     {
         S.fame += n;
     }
+}
+
+// ---------- satisfaction diagnosis (v4.7) ----------
+// four categories the player can read: fun (exhibits, play), food (hunger,
+// thirst), comfort (toilets, rest) and ambience (crowding, decoration).
+// this is purely a READOUT of things the sim already does to v.sat - the hooks
+// only count events, they never change satisfaction, income or fame. keeping
+// it balance-neutral is what lets it ship without re-tuning anything.
+var DIAG_CATS = ['fun', 'food', 'comfort', 'amb'];
+var DIAG_LABEL = { fun: '재미', food: '먹거리', comfort: '편의', amb: '쾌적' };
+var DIAG_ICON = { fun: '🎠', food: '🍔', comfort: '🚻', amb: '🌸' };
+// which category each cause belongs to
+var DIAG_CAUSE_CAT = {
+    toilet: 'comfort', energy: 'comfort', hunger: 'food', thirst: 'food',
+    empty: 'fun', boring: 'fun', crowd: 'amb', dull: 'amb'
+};
+// daily decay, so the readout reflects roughly the last month
+var DIAG_DECAY = 0.94;
+// the pictogram drawn in a visitor's thought bubble
+var THOUGHT_ICON = {
+    toilet: '🚻', hunger: '🍔', thirst: '🥤', energy: '💤', empty: '❓', boring: '😐',
+    crowd: '😵', dull: '🎨', price: '💸',
+    fun: '😍', food: '😋', comfort: '😌', amb: '✨'
+};
+// what the visitor was thinking, for the feed in the diagnosis tab
+var THOUGHT_TEXT = {
+    toilet: '화장실이 어디 있지...',
+    hunger: '배고픈데 먹을 곳이 없네',
+    thirst: '목말라... 마실 게 없나?',
+    energy: '다리 아파... 앉을 곳 없나',
+    empty: '볼 게 하나도 없잖아!',
+    boring: '이 전시는 좀 심심하다',
+    crowd: '사람이 너무 많아!',
+    dull: '여긴 좀 밋밋한 느낌이야',
+    price: '입장료가 너무 비싸!',
+    fun: '와, 정말 멋지다!',
+    food: '맛있다~ 배부르다',
+    comfort: '편하게 잘 쉬었다',
+    amb: '분위기 정말 좋다!'
+};
+// most recent thoughts, newest first. runtime only - it is "what people are
+// saying right now", not history worth putting in the save
+var THOUGHT_FEED = [];
+var THOUGHT_FEED_MAX = 8;
+// at most this many bubbles drawn at once, so a packed room stays readable
+var THOUGHT_DRAW_MAX = 6;
+
+function emptyDiag()
+{
+    return {
+        g: { fun: 0, food: 0, comfort: 0, amb: 0 },
+        b: { fun: 0, food: 0, comfort: 0, amb: 0 },
+        price: 0,
+        // cause counts keyed 'cause@room', so advice can point at a room
+        c: {}
+    };
+}
+
+function diagReady()
+{
+    if (!S.diag || !S.diag.g || !S.diag.b || !S.diag.c)
+    {
+        S.diag = emptyDiag();
+    }
+    return S.diag;
+}
+
+function showThought(v, kind, good)
+{
+    v.thought = { kind: kind, t: 0 };
+    // good thoughts are common and would drown out the useful bad ones
+    if (good && Math.random() > 0.15)
+    {
+        return;
+    }
+    var where = (roomsOpen() > 1) ? ' (' + roomDef(v.room || 0).name + ')' : '';
+    THOUGHT_FEED.unshift({ icon: THOUGHT_ICON[kind] || '💭', text: THOUGHT_TEXT[kind] || '', good: !!good, where: where });
+    if (THOUGHT_FEED.length > THOUGHT_FEED_MAX)
+    {
+        THOUGHT_FEED.length = THOUGHT_FEED_MAX;
+    }
+}
+
+// a complaint. cause is a DIAG_CAUSE_CAT key, or 'price'
+function diagBad(v, cause)
+{
+    var d = diagReady();
+    if (cause === 'price')
+    {
+        d.price++;
+    }
+    else
+    {
+        var cat = DIAG_CAUSE_CAT[cause];
+        d.b[cat]++;
+        var key = cause + '@' + (v.room || 0);
+        d.c[key] = (d.c[key] || 0) + 1;
+    }
+    showThought(v, cause, false);
+}
+
+// a compliment in category cat
+function diagGood(v, cat, bubble)
+{
+    var d = diagReady();
+    d.g[cat]++;
+    if (bubble)
+    {
+        showThought(v, cat, true);
+    }
+}
+
+function tickDiag()
+{
+    var d = diagReady();
+    for (var i = 0; i < DIAG_CATS.length; i++)
+    {
+        var k = DIAG_CATS[i];
+        d.g[k] *= DIAG_DECAY;
+        d.b[k] *= DIAG_DECAY;
+    }
+    d.price *= DIAG_DECAY;
+    for (var ck in d.c)
+    {
+        d.c[ck] *= DIAG_DECAY;
+        if (d.c[ck] < 0.05)
+        {
+            delete d.c[ck];
+        }
+    }
+}
+
+// 0..100. complaints weigh double: one angry visitor outweighs one content one
+function diagScore(cat)
+{
+    var d = diagReady();
+    var g = d.g[cat];
+    var b = d.b[cat];
+    if (g + b < 0.5)
+    {
+        return null;    // not enough to say yet
+    }
+    return Math.round((g + 1) / (g + 2 * b + 1) * 100);
+}
+
+// the single most useful thing to fix right now, as a sentence
+function diagAdvice()
+{
+    var d = diagReady();
+    var worst = null;
+    var worstScore = 101;
+    for (var i = 0; i < DIAG_CATS.length; i++)
+    {
+        var sc = diagScore(DIAG_CATS[i]);
+        if (sc !== null && sc < worstScore && d.b[DIAG_CATS[i]] >= 2)
+        {
+            worstScore = sc;
+            worst = DIAG_CATS[i];
+        }
+    }
+    var priceHeavy = d.price >= 3 && d.price > (d.b.fun + d.b.food + d.b.comfort + d.b.amb) * 0.5;
+    if (priceHeavy)
+    {
+        return { icon: '💸', text: '입장료가 비싸다는 손님이 많아요. 지금 ' + fmt(S.fee) + 'G — 메뉴에서 조금 내려 보세요.' };
+    }
+    if (!worst || worstScore >= 75)
+    {
+        return { icon: '👍', text: '손님들이 아주 만족하고 있어요! 이대로 쭉~' };
+    }
+    // strongest cause inside the worst category, and the room it comes from
+    var best = null;
+    var bestN = 0;
+    for (var key in d.c)
+    {
+        var parts = key.split('@');
+        if (DIAG_CAUSE_CAT[parts[0]] === worst && d.c[key] > bestN)
+        {
+            bestN = d.c[key];
+            best = { cause: parts[0], room: parseInt(parts[1], 10) || 0 };
+        }
+    }
+    if (!best)
+    {
+        return { icon: DIAG_ICON[worst], text: DIAG_LABEL[worst] + ' 점수가 낮아요.' };
+    }
+    var rn = (roomsOpen() > 1) ? '「' + roomDef(best.room).name + '」에 ' : '';
+    var tips = {
+        toilet: '화장실이 부족해요 — ' + rn + '화장실을 더 지어 보세요.',
+        hunger: '먹을 곳이 부족해요 — ' + rn + '매점이나 카페를 지어 보세요.',
+        thirst: '마실 곳이 부족해요 — ' + rn + '자판기나 아이스크림 가게를 지어 보세요.',
+        energy: '쉴 곳이 부족해요 — ' + rn + '벤치를 놓아 보세요.',
+        empty: '볼거리가 부족해요 — ' + rn + THEME.text.enclosureWord + '를 늘리고 ' + THEME.text.speciesWord + '를 채워 보세요.',
+        boring: '전시 매력이 낮아요 — 강화하거나 화단·장식품·비밀 스폿으로 매력을 올려 보세요.',
+        crowd: '너무 붐벼요 — ' + rn + '공간을 넓히거나 볼거리를 흩어 놓아 보세요.',
+        dull: '좀 밋밋해요 — ' + rn + '화단·장식품을 놓거나 꽃길 바닥을 깔아 보세요.'
+    };
+    return { icon: THOUGHT_ICON[best.cause], text: tips[best.cause] };
+}
+
+// one-line score summary for the month report
+function diagLine()
+{
+    var out = [];
+    for (var i = 0; i < DIAG_CATS.length; i++)
+    {
+        var sc = diagScore(DIAG_CATS[i]);
+        out.push(DIAG_ICON[DIAG_CATS[i]] + ' ' + DIAG_LABEL[DIAG_CATS[i]] + ' ' + (sc === null ? '-' : sc));
+    }
+    return out.join(' · ');
 }
 
 // ---------- floats / emotes ----------
@@ -6734,6 +7376,12 @@ function spawnVisitor(room)
         return;
     }
     var vt = pool[Math.floor(Math.random() * pool.length)];
+    // now and then the person walking in is one of the regulars
+    var reg = pickVisitingRegular();
+    if (reg)
+    {
+        vt = vtypeById(reg.job);
+    }
     var money = vt.money[0] + Math.floor(Math.random() * (vt.money[1] - vt.money[0]));
     if (money < S.fee)
     {
@@ -6765,6 +7413,10 @@ function spawnVisitor(room)
         giftDone: false,
         photoDone: false
     };
+    if (reg)
+    {
+        v.regId = reg.id;
+    }
     VISITORS.push(v);
     S.money += S.fee;
     S.mon.feeIn += S.fee;
@@ -6777,6 +7429,10 @@ function spawnVisitor(room)
     if (S.fee > 0)
     {
         addFloat(v.x, v.y - 10, '+' + S.fee + 'G', '#ffe060');
+    }
+    if (reg)
+    {
+        regArrive(reg, v);
     }
 }
 
@@ -6935,7 +7591,7 @@ function visitorDecide(v)
             {
                 v.penalized[need] = true;
                 v.sat -= 6;
-                addEmote(v.x, v.y - 24, need);
+                diagBad(v, need);
                 addEmote(v.x + 8, v.y - 30, 'angry');
             }
             v.needs[need] = 25; // gives up, and won't nag again for a while
@@ -7011,6 +7667,7 @@ function visitorDecide(v)
     {
         v.penalized.empty = true;
         v.sat -= 15;
+        diagBad(v, 'empty');
         addEmote(v.x, v.y - 24, 'angry');
     }
     leaveMap(v);
@@ -7026,6 +7683,12 @@ function leaveMap(v)
     var path = findPath(vt.x, vt.y, exit.x, exit.y, v.dirs, vr);
     if (path === null)
     {
+        // boxed in (the player built over the way out): they vanish without a
+        // review as before, but a regular's visit still counts
+        if (v.regId)
+        {
+            regLeave(v);
+        }
         v.state = 'gone';
         return;
     }
@@ -7041,12 +7704,23 @@ function finishVisit(v)
     if (S.fee > fair)
     {
         v.sat -= (S.fee - fair) / 25;
+        // only a real overcharge is worth a complaint in the readout
+        if (S.fee - fair >= 60)
+        {
+            diagBad(v, 'price');
+        }
     }
     var s = v.sat;
     var review;
     var color;
     if (s >= 65)
     {
+        S.mon.happy = (S.mon.happy || 0) + 1;
+        LAST_HAPPY_JOBS.push(v.vt.id);
+        if (LAST_HAPPY_JOBS.length > 20)
+        {
+            LAST_HAPPY_JOBS.shift();
+        }
         gainFame(2);
         review = REVIEWS_GOOD[Math.floor(Math.random() * REVIEWS_GOOD.length)];
         color = '#ffe060';
@@ -7070,6 +7744,10 @@ function finishVisit(v)
         }
     }
     addFloat(v.x, v.y - 20, review, color);
+    if (v.regId)
+    {
+        regLeave(v);
+    }
 }
 
 function updateVisitor(v, dt)
@@ -7078,6 +7756,14 @@ function updateVisitor(v, dt)
     for (var k in v.needs)
     {
         v.needs[k] = Math.min(100, v.needs[k] + rates[k] * dt);
+    }
+    if (v.thought)
+    {
+        v.thought.t += dt;
+        if (v.thought.t > 2.2)
+        {
+            v.thought = null;
+        }
     }
     v.animT += dt;
     if (v.animT > 0.18)
@@ -7157,6 +7843,11 @@ function updateVisitor(v, dt)
             if (fl.sat)
             {
                 v.sat += fl.sat * dt;
+                if (!v.ambNoted)
+                {
+                    v.ambNoted = true;
+                    diagGood(v, 'amb', false);
+                }
             }
             if (fl.tip && Math.random() < fl.tip * dt)
             {
@@ -7235,7 +7926,9 @@ function updateVisitor(v, dt)
         {
             v.heartDone = false;
             v.viewed.push(obj2.id);
-            var appeal = tankAppeal(obj2);
+            var vparts = tankAppealParts(obj2);
+            var appeal = vparts.total;
+            noteViewDiag(v, obj2, vparts);
             v.sat += Math.min(20, 4 + appeal * 0.3);
             var sp = SPECIES[obj2.species];
             // research gain (artists and scholars multiply it)
@@ -7250,6 +7943,12 @@ function updateVisitor(v, dt)
             if (Math.random() < 0.06)
             {
                 gainFame(1);
+            }
+            // named residents get cheered by name now and then
+            if (obj2.nick && Math.random() < 0.12)
+            {
+                var cheers = ['최고!', '멋져!', '반가워!', '또 보러 올게!'];
+                addFloat(v.x, v.y - 34, obj2.nick + ' ' + cheers[Math.floor(Math.random() * cheers.length)], '#ffd0f0');
             }
             // streamers broadcast what they see
             if (v.vt.fameChance && Math.random() < v.vt.fameChance)
@@ -7304,6 +8003,7 @@ function updateVisitor(v, dt)
                 }
                 if (fb.need)
                 {
+                    diagGood(v, (fb.need === 'hunger' || fb.need === 'thirst') ? 'food' : 'comfort', true);
                     v.needs[fb.need] = 5;
                     if (fb.rest)
                     {
@@ -7325,6 +8025,7 @@ function updateVisitor(v, dt)
                 }
                 if (fb.fun)
                 {
+                    diagGood(v, 'fun', true);
                     v.sat += 8;
                     addEmote(v.x, v.y - 26, 'note');
                     if (Math.random() < 0.3)
@@ -7547,6 +8248,8 @@ function onDayTick()
     tickRequests();
     tickJobUnlocks();
     tickTrophies();
+    tickBonds();
+    tickDiag();
     if (S.showCd > 0)
     {
         S.showCd--;
@@ -7717,6 +8420,443 @@ function announceNewRoom(r)
     });
 }
 
+// ---------- calendar helpers ----------
+// days since the venue's first day. used for anything that has to measure
+// "how long ago" across month and year boundaries (regular visit gaps,
+// how long an exhibit has lived here).
+function absDay()
+{
+    return ((S.year - 1) * 12 + (S.month - 1)) * DAYS_PER_MONTH + S.day;
+}
+
+// ---------- regular customers (v4.7) ----------
+// visitors are runtime-only and thousands come through, so they cannot each be
+// remembered. instead a happy crowd occasionally produces ONE regular, who is
+// saved (at most REG_CAP of them) and then shows up again now and then as a
+// normal visitor tagged with v.regId. their heart rises with every good visit
+// and unlocks gifts, wishes on the request board, friends, and their story.
+var REG_CAP = 12;
+// heart value at which each tier (1..5) starts
+var REG_HEART_TIERS = [0, 15, 40, 70, 100];
+// a regular never comes back sooner than this many days after the last visit.
+// a day is 1.25s at x1, so this keeps one face from popping in every few seconds
+var REG_VISIT_GAP = 10;
+var REG_WISH_HEART = 25;
+// happy leavers a month needs before it can produce a regular. a full room
+// only sees ~20 arrivals a month, so this is set well below that.
+var REG_BIRTH_HAPPY = 8;
+// jobs of recent happy leavers; a new regular is drawn from these so they
+// look like "someone who has been coming", not a random stranger
+var LAST_HAPPY_JOBS = [];
+var regToastAt = 0;
+// set while a regular's friends are being spawned so they cannot chain
+var regFriendSpawn = false;
+
+function regTier(rg)
+{
+    var t = 1;
+    for (var i = 1; i < REG_HEART_TIERS.length; i++)
+    {
+        if (rg.heart >= REG_HEART_TIERS[i])
+        {
+            t = i + 1;
+        }
+    }
+    return t;
+}
+
+function regById(id)
+{
+    for (var i = 0; i < S.regulars.length; i++)
+    {
+        if (S.regulars[i].id === id)
+        {
+            return S.regulars[i];
+        }
+    }
+    return null;
+}
+
+function regLabel(rg)
+{
+    return jobName(rg.job) + ' ' + rg.name;
+}
+
+function regInVenue(id)
+{
+    for (var i = 0; i < VISITORS.length; i++)
+    {
+        if (VISITORS[i].regId === id)
+        {
+            return VISITORS[i];
+        }
+    }
+    return null;
+}
+
+function vtypeById(id)
+{
+    for (var i = 0; i < VTYPES.length; i++)
+    {
+        if (VTYPES[i].id === id)
+        {
+            return VTYPES[i];
+        }
+    }
+    return null;
+}
+
+// filled at display time so a rename (or a theme switch) is always current
+function fillRegTokens(str)
+{
+    return String(str)
+        .split('%N%').join(OWNER_NAME)
+        .split('%T%').join(THEME.text.ownerTitle)
+        .split('%P%').join(THEME.text.venueWord)
+        .split('%F%').join(THEME.text.friendWord);
+}
+
+// story line i (0..2) for this regular
+function regStory(rg, i)
+{
+    var lines = REG_STORIES[rg.job] || [];
+    return lines[i] ? fillRegTokens(lines[i]) : '';
+}
+
+// how many story lines this regular has opened up so far
+function regStoriesOpen(rg)
+{
+    var t = regTier(rg);
+    if (t >= 5)
+    {
+        return 3;
+    }
+    if (t >= 3)
+    {
+        return 2;
+    }
+    return 1;
+}
+
+function regBirthChance(n)
+{
+    if (n < 3)
+    {
+        return 0.5;
+    }
+    if (n < 6)
+    {
+        return 0.25;
+    }
+    if (n < 9)
+    {
+        return 0.12;
+    }
+    return 0.06;
+}
+
+function regFreeName(job)
+{
+    var used = {};
+    for (var i = 0; i < S.regulars.length; i++)
+    {
+        used[S.regulars[i].name] = true;
+    }
+    var pool = (REG_NAMES[REG_NAME_POOL[job] || 'adult'] || []).filter(function (n) { return !used[n]; });
+    if (pool.length === 0)
+    {
+        // own pool used up: borrow from any pool rather than repeat a name
+        var all = REG_NAMES.young.concat(REG_NAMES.adult, REG_NAMES.elder);
+        pool = all.filter(function (n) { return !used[n]; });
+    }
+    if (pool.length === 0)
+    {
+        return null;
+    }
+    return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function regFaceImg(rg)
+{
+    return '<img src="' + iconForJob(rg.job) + '" style="width:48px;height:66px;image-rendering:pixelated;">';
+}
+
+// month-end roll: a month with a happy crowd may produce a new regular.
+// the chance drops as the circle grows, so in a long session the twelve
+// fill in over roughly an hour at x1 instead of all in the first few minutes.
+// force=true skips the dice (tests only).
+function tryBirthRegular(happy, force)
+{
+    if (!S.opened || S.regulars.length >= REG_CAP)
+    {
+        return null;
+    }
+    if (!force)
+    {
+        if (happy < REG_BIRTH_HAPPY || Math.random() >= regBirthChance(S.regulars.length))
+        {
+            return null;
+        }
+    }
+    var job = null;
+    if (LAST_HAPPY_JOBS.length > 0)
+    {
+        job = LAST_HAPPY_JOBS[Math.floor(Math.random() * LAST_HAPPY_JOBS.length)];
+    }
+    if (!job || !REG_STORIES[job])
+    {
+        var opts = VTYPES.filter(function (t) { return S.fame >= (t.unlockFame || 0); });
+        job = opts[Math.floor(Math.random() * opts.length)].id;
+    }
+    var name = regFreeName(job);
+    if (!name)
+    {
+        return null;
+    }
+    var today = absDay();
+    var rg = { id: S.regSeq++, name: name, job: job, visits: 0, heart: 0, born: today, last: today, wishDone: 0, wishCd: 0 };
+    S.regulars.push(rg);
+    sfx('fanfare');
+    queueModal({
+        title: '⭐ 단골 손님이 생겼어요!',
+        body: '<div style="text-align:center;">' + regFaceImg(rg) + '<br>' +
+            '<b style="font-size:16px;color:#c07000;">' + regLabel(rg) + '</b><br><br>' +
+            '<div class="regLine">「' + regStory(rg, 0) + '」</div><br>' +
+            '<span class="small">머리 위에 ⭐가 뜬 손님을 <b>탭</b>하면 이야기를 들을 수 있어요.<br>' +
+            '자주 만족시켜 주면 선물 · 소원 · 친구 · 그리고 비밀 이야기가 열려요!<br>📊 경영 → 단골 탭에서 모아 볼 수 있어요.</span></div>',
+        buttons: [{ label: '반가워요!', cls: '' }]
+    });
+    return rg;
+}
+
+// called from spawnVisitor: maybe this arrival is one of the regulars
+function pickVisitingRegular()
+{
+    if (!S.regulars || S.regulars.length === 0 || regFriendSpawn || S.groupBurst > 0)
+    {
+        return null;
+    }
+    // throughput is only about one arrival per game day per room (a visit
+    // lasts ~30 days), so this has to be generous for a regular to be a
+    // familiar face rather than a rare sighting. measured 2026-10-21.
+    var p = Math.min(0.35, 0.08 + 0.03 * S.regulars.length);
+    if (Math.random() >= p)
+    {
+        return null;
+    }
+    var today = absDay();
+    var cands = S.regulars.filter(function (rg)
+    {
+        return today - rg.last >= REG_VISIT_GAP && !regInVenue(rg.id) && vtypeById(rg.job);
+    });
+    if (cands.length === 0)
+    {
+        return null;
+    }
+    return cands[Math.floor(Math.random() * cands.length)];
+}
+
+// a regular just walked in through the door of room v.room
+function regArrive(rg, v)
+{
+    var t = regTier(rg);
+    rg.last = absDay();
+    addEmote(v.x, v.y - 26, 'sparkle');
+    var now = Date.now();
+    if (now - regToastAt > 4000)
+    {
+        regToastAt = now;
+        var where = (roomsOpen() > 1) ? ' (' + roomDef(v.room || 0).name + ')' : '';
+        showToast('⭐ 단골 ' + regLabel(rg) + '이(가) 놀러 왔어요!' + where);
+    }
+    // heart 2+: sometimes brings a little something
+    if (t >= 2 && Math.random() < 0.3)
+    {
+        regGift(rg, v);
+    }
+    // heart 3+: posts a personal wish on the request board
+    if (t >= 3)
+    {
+        maybePostRegularWish(rg);
+    }
+    // heart 4+: sometimes brings friends along
+    if (t >= 4 && Math.random() < 0.15)
+    {
+        var n = 2 + Math.floor(Math.random() * 2);
+        var brought = 0;
+        regFriendSpawn = true;
+        for (var i = 0; i < n; i++)
+        {
+            var before = VISITORS.length;
+            spawnVisitor(v.room || 0);
+            if (VISITORS.length > before)
+            {
+                brought++;
+            }
+        }
+        regFriendSpawn = false;
+        if (brought > 0)
+        {
+            showToast('👫 ' + rg.name + '이(가) 친구 ' + brought + '명을 데려왔어요!');
+        }
+    }
+}
+
+function regGift(rg, v)
+{
+    var g = 150 + S.level * 120;
+    S.money += g;
+    S.mon.shopIn += g;
+    addEmote(v.x + 8, v.y - 30, 'gift');
+    addFloat(v.x, v.y - 34, '+' + g + 'G', '#ffe060');
+    showToast('🎁 ' + rg.name + '이(가) 선물을 줬어요! +' + fmt(g) + 'G');
+}
+
+// a regular left; how they felt decides how much closer they got
+function regLeave(v)
+{
+    var rg = regById(v.regId);
+    if (!rg)
+    {
+        return;
+    }
+    rg.visits++;
+    // +2 per happy visit: hearts from visits alone reach 100 after ~50 visits
+    // (about 6 game years in a 1-hour session), and each answered wish is
+    // worth a dozen visits, so the wishes are the fast road. measured with a
+    // 2880-day run on 2026-10-21; +3 finished ten regulars inside one session.
+    var gain = 0;
+    if (v.sat >= 65)
+    {
+        gain = 2;
+    }
+    else
+    {
+        if (v.sat >= 38)
+        {
+            gain = 1;
+        }
+    }
+    // a bad visit never takes hearts away - losing a friend over one rough day
+    // is not the feeling this is for
+    regAddHeart(rg, gain);
+}
+
+function regAddHeart(rg, n)
+{
+    var before = regTier(rg);
+    rg.heart = Math.max(0, Math.min(100, rg.heart + n));
+    var after = regTier(rg);
+    for (var t = before + 1; t <= after; t++)
+    {
+        regTierUp(rg, t);
+    }
+}
+
+function regTierUp(rg, t)
+{
+    if (t === 2)
+    {
+        sfx('levelup');
+        showToast('💗 ' + regLabel(rg) + '와(과) 친해졌어요! (♥2) 이제 가끔 선물을 줘요');
+        return;
+    }
+    if (t === 4)
+    {
+        sfx('levelup');
+        showToast('💗 ' + regLabel(rg) + '와(과) 단짝이 됐어요! (♥4) 이제 친구들을 데려와요');
+        return;
+    }
+    if (t === 3)
+    {
+        sfx('quest');
+        queueModal({
+            title: '💗 ' + regLabel(rg) + '의 이야기',
+            body: '<div style="text-align:center;">' + regFaceImg(rg) + '<br>' +
+                '<b style="color:#d04080;">♥♥♥ 마음을 열었어요!</b><br><br>' +
+                '<div class="regLine">「' + regStory(rg, 1) + '」</div><br>' +
+                '<span class="small">이제 가끔 <b>📋 의뢰 게시판</b>에 소원을 붙일 거예요.<br>소원을 들어주면 훨씬 더 가까워져요!</span></div>',
+            buttons: [{ label: '고마워요!', cls: '' }]
+        });
+        return;
+    }
+    if (t === 5)
+    {
+        var g = 3000 + S.level * 1000;
+        S.money += g;
+        S.fame += 10;
+        sfx('fanfare');
+        queueModal({
+            title: '🌟 평생 단골!',
+            body: '<div style="text-align:center;">' + regFaceImg(rg) + '<br>' +
+                '<b style="font-size:16px;color:#d04080;">' + regLabel(rg) + '</b><br>♥♥♥♥♥<br><br>' +
+                '<div class="regLine pink">「' + regStory(rg, 2) + '」</div><br>' +
+                '감사의 선물 💰 +' + fmt(g) + 'G · 💗 인기 +10</div>',
+            buttons: [{ label: '나도 고마워!', cls: '' }]
+        });
+    }
+}
+
+// the regular's own request, if they are close enough and do not have one up
+function maybePostRegularWish(rg)
+{
+    var t = regTier(rg);
+    // one wish at heart 3 and one more at heart 4; heart 5 is the reward
+    var allowed = (t >= 4) ? 2 : 1;
+    if (t >= 5 || rg.wishDone >= allowed || absDay() < (rg.wishCd || 0))
+    {
+        return null;
+    }
+    for (var i = 0; i < S.requests.length; i++)
+    {
+        if (S.requests[i].regId === rg.id)
+        {
+            return null;
+        }
+    }
+    var r = genRequest(rg.job);
+    r.regId = rg.id;
+    // wishes wait on the board until answered; they do not rotate away
+    delete r.offerDays;
+    var rw = r.reward || {};
+    if (rw.g)
+    {
+        rw.g = Math.round(rw.g * 1.3);
+    }
+    if (rw.rp)
+    {
+        rw.rp = Math.round(rw.rp * 1.3);
+    }
+    S.requests.push(r);
+    sfx('modal');
+    showToast('⭐ 단골 ' + rg.name + '이(가) 의뢰 게시판에 소원을 붙였어요!');
+    return r;
+}
+
+// a wish was declined, or ran out of time: ask again later, not right away
+function regWishDropped(r, days)
+{
+    var rg = (r && r.regId) ? regById(r.regId) : null;
+    if (rg)
+    {
+        rg.wishCd = absDay() + days;
+    }
+}
+
+// display name of whoever posted a request
+function posterName(r)
+{
+    if (r.regId)
+    {
+        var rg = regById(r.regId);
+        if (rg)
+        {
+            return '⭐ ' + regLabel(rg);
+        }
+    }
+    return jobName(r.poster);
+}
+
 // ---------- request board ----------
 // visitors post requests; completing them pays out money/points and the
 // special ones unlock exclusive buildings in the build menu
@@ -7833,10 +8973,11 @@ function genFeatureRequest(poster)
     return r;
 }
 
-function genRequest()
+// posterOverride: job id of a specific poster (a regular's wish), else random
+function genRequest(posterOverride)
 {
     var posters = VTYPES.filter(function (t) { return S.fame >= (t.unlockFame || 0) && !t.rare; });
-    var poster = posters[Math.floor(Math.random() * posters.length)].id;
+    var poster = posterOverride || posters[Math.floor(Math.random() * posters.length)].id;
     var kinds = [];
     var cls = reachableMaxCls();
     var budget = S.money * 1.4 + 400;
@@ -8214,13 +9355,25 @@ function completeRequest(r)
         S.buffs[r.rewardBuff] = (S.buffs[r.rewardBuff] || 0) + 1;
         facTxt += '<div style="margin-top:8px;background:#e8f4ff;border:2px solid #6aa8dd;border-radius:8px;padding:8px;text-align:center;">' + bf.icon + ' 영구 버프 획득!<br><b style="color:#2f6fb0;">「' + bf.name + '」 Lv' + S.buffs[r.rewardBuff] + '</b><br><span class="small">' + bf.desc + '</span></div>';
     }
+    var wishTxt = '';
+    var wishReg = r.regId ? regById(r.regId) : null;
+    if (wishReg)
+    {
+        wishReg.wishDone = (wishReg.wishDone || 0) + 1;
+        wishTxt = '<div style="margin-top:8px;background:#fff0f6;border:2px solid #e090b0;border-radius:8px;padding:8px;text-align:center;">⭐ ' + regLabel(wishReg) + '의 소원을 들어줬어요!<br><b style="color:#d04080;">💗 호감도 크게 상승!</b></div>';
+    }
     S.fame += 5;
     sfx('quest');
     queueModal({
         title: '📋 의뢰 달성!',
-        body: '<div style="text-align:center;">「' + jobName(r.poster) + '」의 의뢰를 해결했다!<br><span class="small">' + r.desc + '</span><br><br>' + parts.join(' · ') + (parts.length ? '<br>' : '') + '💗 인기 +5</div>' + decoTxt + facTxt,
+        body: '<div style="text-align:center;">「' + posterName(r) + '」의 의뢰를 해결했다!<br><span class="small">' + r.desc + '</span><br><br>' + parts.join(' · ') + (parts.length ? '<br>' : '') + '💗 인기 +5</div>' + wishTxt + decoTxt + facTxt,
         buttons: [{ label: '좋았어!', cls: '' }]
     });
+    // after the modal above, so a heart tier-up celebration queues behind it
+    if (wishReg)
+    {
+        regAddHeart(wishReg, REG_WISH_HEART);
+    }
 }
 
 // player takes on an offered request: the deadline clock starts now
@@ -8238,7 +9391,7 @@ function acceptRequest(id)
                 r.days = r.limit || 60;
             }
             sfx('click');
-            showToast('📋 「' + jobName(r.poster) + '」의 의뢰를 수락했어요!');
+            showToast('📋 「' + posterName(r) + '」의 의뢰를 수락했어요!');
             return true;
         }
     }
@@ -8254,6 +9407,7 @@ function declineRequest(id)
         if (r.id === id && !r.accepted)
         {
             S.requests.splice(i, 1);
+            regWishDropped(r, 60);
             sfx('click');
             return true;
         }
@@ -8292,7 +9446,8 @@ function tickRequests()
             if (rq.days <= 0)
             {
                 S.requests.splice(e, 1);
-                showToast('📋 「' + jobName(rq.poster) + '」의 의뢰가 기한이 지나 사라졌어요');
+                regWishDropped(rq, 40);
+                showToast('📋 「' + posterName(rq) + '」의 의뢰가 기한이 지나 사라졌어요');
             }
         }
         else if (rq.offerDays !== undefined)
@@ -8328,7 +9483,7 @@ function tickRequests()
     var offers = 0;
     for (var q = 0; q < S.requests.length; q++)
     {
-        if (!S.requests[q].special && !S.requests[q].accepted)
+        if (!S.requests[q].special && !S.requests[q].regId && !S.requests[q].accepted)
         {
             offers++;
         }
@@ -8407,6 +9562,15 @@ function tryOpenPark()
 function closePark()
 {
     S.opened = false;
+    // regulars sent home at closing still had their visit - count it, or a
+    // player who closes up often would see their regulars stop growing
+    for (var i = 0; i < VISITORS.length; i++)
+    {
+        if (VISITORS[i].regId)
+        {
+            regLeave(VISITORS[i]);
+        }
+    }
     VISITORS = [];
     S.spawnAcc = 0;
     S.spawnCd = 0;
@@ -8769,7 +9933,8 @@ function monthEnd()
         vis: S.mon.vis,
         feeIn: S.mon.feeIn,
         shopIn: S.mon.shopIn,
-        maint: maint
+        maint: maint,
+        happy: S.mon.happy || 0
     };
 
     // fame decay
@@ -8782,11 +9947,12 @@ function monthEnd()
         S.month = 1;
         S.year++;
     }
-    S.mon = { vis: 0, feeIn: 0, shopIn: 0, maint: 0 };
+    S.mon = { vis: 0, feeIn: 0, shopIn: 0, maint: 0, happy: 0 };
     S.stormMonth = false;
 
     showMonthReport(rep);
     checkPromotion();
+    tryBirthRegular(rep.happy);
     if (rep.month === 12)
     {
         yearAwards();
@@ -8911,7 +10077,7 @@ function yearAwards()
     queueModal({
         title: '🏅 연말 시상식',
         body: '<div style="text-align:center;">올 한 해를 빛낸 전시를 발표합니다!<br><br>🏅 <b>올해의 전시</b> 🏅<br>' +
-            '<b style="font-size:17px;color:#c07000;">「' + SPECIES[best.species].name + '」</b><br>(매력 ' + Math.floor(bestA) + ')<br><br>' +
+            '<b style="font-size:17px;color:#c07000;">「' + exhibitName(best) + '」</b><br>(매력 ' + Math.floor(bestA) + ')<br><br>' +
             OWNER_NAME + ' ' + THEME.text.ownerTitle + ', 축하합니다!<br>인기 +20 · 상금 +3000G</div>',
         buttons: [{ label: '영광이에요!', cls: '' }]
     });
@@ -9762,7 +10928,8 @@ function showMonthReport(rep)
         '<tr><td>🔧 유지비</td><td>-' + fmt(rep.maint) + 'G</td></tr>' +
         '<tr><td><b>수지</b></td><td class="' + cls + '">' + (net >= 0 ? '+' : '') + fmt(net) + 'G</td></tr>' +
         '</table>' +
-        '<div class="small" style="text-align:center;margin-top:6px;">현재 인기 ' + fmt(S.fame) + ' · 누적 관람객 ' + fmt(S.visTotal) + '명</div>';
+        '<div class="small" style="text-align:center;margin-top:6px;">현재 인기 ' + fmt(S.fame) + ' · 누적 관람객 ' + fmt(S.visTotal) + '명</div>' +
+        '<div class="small" style="text-align:center;margin-top:2px;">' + diagLine() + '</div>';
     queueModal({ title: '📋 ' + rep.year + '년차 ' + rep.month + '월 결산', body: body, buttons: [{ label: '확인', cls: '' }] });
 }
 
@@ -10459,7 +11626,7 @@ function openRequestPanel()
             var deadline = r.special ? '<span class="small"> · 기한 없음</span>'
                 : (r.days !== undefined ? '<span class="small"> · 남은 기한 ' + r.days + '일</span>' : '');
             card.innerHTML = '<div class="mid">' +
-                '<div class="nm">' + (r.special ? '⭐ ' : '') + '「' + jobName(r.poster) + '」의 의뢰' + deadline + '</div>' +
+                '<div class="nm">' + (r.special ? '⭐ ' : '') + '「' + posterName(r) + '」의 의뢰' + deadline + '</div>' +
                 '<div class="sub">' + r.desc + (prog ? ' <b>(' + prog + ')</b>' : '') + '</div>' +
                 '<div class="sub">보상: ' + requestRewardText(r) + '</div></div>';
             sh.body.appendChild(card);
@@ -10491,7 +11658,7 @@ function openRequestPanel()
                 : '<span class="small"> · 기한 ' + (r.limit || 60) + '일 (수락 시 시작)</span>';
             var mid = document.createElement('div');
             mid.className = 'mid';
-            mid.innerHTML = '<div class="nm">' + (r.special ? '⭐ ' : '') + '「' + jobName(r.poster) + '」의 의뢰' + deadline + '</div>' +
+            mid.innerHTML = '<div class="nm">' + (r.special ? '⭐ ' : '') + '「' + posterName(r) + '」의 의뢰' + deadline + '</div>' +
                 '<div class="sub">' + r.desc + (prog ? ' <b>(' + prog + ')</b>' : '') + '</div>' +
                 '<div class="sub">보상: ' + requestRewardText(r) + '</div>';
             card.appendChild(mid);
@@ -10605,9 +11772,175 @@ function comboReqName(req)
 }
 
 // ----- info panel -----
-function openInfoPanel()
+// ----- management panel (was the info panel) -----
+// one toolbar button, several tabs. the toolbar is already six buttons wide in
+// the museum and cannot take more without becoming a tap hazard on a phone,
+// so new management screens become tabs here instead (plan 2026-10-21, 3-1).
+var INFO_TABS = [
+    { id: 'status', label: '현황' },
+    { id: 'diag', label: '진단' },
+    { id: 'regular', label: '단골' }
+];
+
+function openInfoPanel(tab)
 {
-    var sh = panelShell('📊 정보');
+    tab = tab || 'status';
+    var sh = panelShell('📊 경영');
+    var tabs = document.createElement('div');
+    tabs.className = 'tabRow';
+    for (var ti = 0; ti < INFO_TABS.length; ti++)
+    {
+        (function (td)
+        {
+            var b = document.createElement('button');
+            b.className = 'tabBtn' + (td.id === tab ? ' on' : '');
+            b.textContent = td.label;
+            b.addEventListener('click', function () { sfx('click'); openInfoPanel(td.id); });
+            tabs.appendChild(b);
+        })(INFO_TABS[ti]);
+    }
+    sh.root.insertBefore(tabs, sh.body);
+    if (tab === 'regular')
+    {
+        fillRegularTab(sh.body);
+        return;
+    }
+    if (tab === 'diag')
+    {
+        fillDiagTab(sh.body);
+        return;
+    }
+    fillStatusTab(sh.body);
+}
+
+function fillDiagTab(body)
+{
+    var adv = diagAdvice();
+    var html = '<div class="card"><div class="mid"><div class="nm">🩺 손님 만족도 진단</div>' +
+        '<div class="sub">최근 한 달쯤의 손님 반응이에요. 불만은 칭찬보다 <b>두 배</b>로 쳐요.</div>' +
+        '<div class="diagAdvice">' + adv.icon + ' ' + adv.text + '</div></div></div>';
+    html += '<div class="card"><div class="mid">';
+    for (var i = 0; i < DIAG_CATS.length; i++)
+    {
+        var cat = DIAG_CATS[i];
+        var sc = diagScore(cat);
+        var pct = (sc === null) ? 0 : sc;
+        var col = (sc === null) ? '#c8b890' : (sc >= 75 ? '#5cb85c' : (sc >= 50 ? '#e8b030' : '#e05a4a'));
+        html += '<div class="diagRow"><span class="diagLbl">' + DIAG_ICON[cat] + ' ' + DIAG_LABEL[cat] + '</span>' +
+            '<span class="diagBar"><span style="width:' + pct + '%;background:' + col + ';"></span></span>' +
+            '<span class="diagNum">' + (sc === null ? '-' : sc) + '</span></div>';
+    }
+    html += '</div></div>';
+    html += '<div class="card"><div class="mid"><div class="nm">💭 손님들의 생각</div>';
+    if (THOUGHT_FEED.length === 0)
+    {
+        html += '<div class="sub">' + (S.opened ? '아직 들려온 이야기가 없어요. 조금 기다려 봐요!' : '개장하면 손님들의 생각이 들려와요!') + '</div>';
+    }
+    for (var t = 0; t < THOUGHT_FEED.length; t++)
+    {
+        var th = THOUGHT_FEED[t];
+        html += '<div class="sub ' + (th.good ? 'good' : '') + '">' + th.icon + ' 「' + th.text + '」<span class="small">' + th.where + '</span></div>';
+    }
+    html += '<div class="small" style="margin-top:4px;">손님 머리 위 말풍선으로도 보여요.</div></div></div>';
+    body.innerHTML = html;
+}
+
+function heartStr(rg)
+{
+    var t = regTier(rg);
+    var out = '';
+    for (var i = 1; i <= 5; i++)
+    {
+        out += (i <= t) ? '♥' : '♡';
+    }
+    return out;
+}
+
+// what the next heart tier will bring, as one line
+function regNextPerk(rg)
+{
+    var t = regTier(rg);
+    var perks = ['', '', '가끔 선물을 줘요', '이야기를 들려주고 소원을 부탁해요', '친구들을 데려와요', '마지막 이야기와 감사 선물'];
+    if (t >= 5)
+    {
+        return '평생 단골이에요! 🌟';
+    }
+    return '♥' + (t + 1) + ': ' + perks[t + 1];
+}
+
+function fillRegularTab(body)
+{
+    var head = document.createElement('div');
+    head.className = 'card';
+    head.innerHTML = '<div class="mid"><div class="nm">⭐ 단골 손님 (' + S.regulars.length + '/' + REG_CAP + ')</div>' +
+        '<div class="sub">만족한 손님이 많은 달에는 <b>단골</b>이 생겨요. 머리 위 ⭐ 손님을 탭하면 이야기를 들을 수 있어요.<br>' +
+        '자주 만족시킬수록 하트가 쌓여 <b>선물 → 소원 → 친구 → 마지막 이야기</b>가 열려요.</div></div>';
+    body.appendChild(head);
+    if (S.regulars.length === 0)
+    {
+        var e = document.createElement('div');
+        e.className = 'small';
+        e.style.padding = '8px';
+        e.textContent = S.opened ? '아직 단골이 없어요. 손님들을 만족시켜 보세요!' : '개장하면 단골이 생기기 시작해요!';
+        body.appendChild(e);
+        return;
+    }
+    for (var i = 0; i < S.regulars.length; i++)
+    {
+        (function (rg)
+        {
+            var card = document.createElement('div');
+            card.className = 'card';
+            card.style.cursor = 'pointer';
+            var img = document.createElement('img');
+            img.className = 'icon';
+            img.src = iconForJob(rg.job);
+            img.style.imageRendering = 'pixelated';
+            card.appendChild(img);
+            var mid = document.createElement('div');
+            mid.className = 'mid';
+            var here = regInVenue(rg.id) ? ' <span class="good">· 지금 와 있어요!</span>' : '';
+            mid.innerHTML = '<div class="nm">' + regLabel(rg) + ' <span style="color:#d04080;">' + heartStr(rg) + '</span>' + here + '</div>' +
+                '<div class="sub">방문 ' + rg.visits + '번 · 이야기 ' + regStoriesOpen(rg) + '/3 · ' + regNextPerk(rg) + '</div>';
+            card.appendChild(mid);
+            card.addEventListener('click', function () { sfx('click'); openRegularModal(rg); });
+            body.appendChild(card);
+        })(S.regulars[i]);
+    }
+}
+
+function openRegularModal(rg)
+{
+    var t = regTier(rg);
+    var vt = vtypeById(rg.job);
+    var stories = '';
+    var open = regStoriesOpen(rg);
+    var gates = ['처음 만난 날', '♥3에 열려요', '♥5에 열려요'];
+    for (var i = 0; i < 3; i++)
+    {
+        if (i < open)
+        {
+            stories += '<div class="regLine' + (i === 2 ? ' pink' : '') + '">「' + regStory(rg, i) + '」</div>';
+        }
+        else
+        {
+            stories += '<div class="regLine locked">🔒 ' + gates[i] + '</div>';
+        }
+    }
+    var here = regInVenue(rg.id) ? '<div class="good" style="margin-top:4px;">지금 놀러 와 있어요!</div>' : '';
+    var heartPct = Math.round(rg.heart);
+    queueModal({
+        title: '⭐ ' + regLabel(rg),
+        body: '<div style="text-align:center;">' + regFaceImg(rg) + '<br>' +
+            '<span style="font-size:18px;color:#d04080;">' + heartStr(rg) + '</span> <span class="small">(' + heartPct + '/100)</span><br>' +
+            '<span class="small">' + (vt ? vt.desc : '') + '<br>방문 ' + rg.visits + '번 · ' + regNextPerk(rg) + '</span>' + here + '</div>' +
+            '<div style="margin-top:8px;">' + stories + '</div>',
+        buttons: [{ label: '닫기', cls: '' }]
+    });
+}
+
+function fillStatusTab(body)
+{
     var next = (S.level < LEVELS.length) ? LEVELS[S.level] : null;
     var html = '<div class="card"><div class="mid">' +
         '<div class="nm">' + starStr(S.level) + ' 「' + LEVELS[S.level - 1].name + '」</div>' +
@@ -10668,7 +12001,8 @@ function openInfoPanel()
                 var md = (o.mood === undefined) ? 80 : o.mood;
                 moodTxt = ' · 기분 ' + md + (md < 45 ? ' 😿' : '');
             }
-            html += '<div class="sub">' + roomTag(o) + BUILD[o.type].name + ' — ' + SPECIES[o.species].name + ' (매력 ' + Math.floor(tankAppeal(o)) + moodTxt + ')</div>';
+            var btl = bondTitle(o);
+            html += '<div class="sub">' + roomTag(o) + BUILD[o.type].name + ' — ' + (btl ? btl.icon + ' ' : '') + exhibitName(o) + ' (매력 ' + Math.floor(tankAppeal(o)) + moodTxt + ')</div>';
         }
         else
         {
@@ -10676,7 +12010,7 @@ function openInfoPanel()
         }
     }
     html += '</div></div>';
-    sh.body.innerHTML = html;
+    body.innerHTML = html;
 }
 
 // ----- menu panel -----
@@ -11261,7 +12595,12 @@ function openObjectModal(o)
     {
         var sp = SPECIES[o.species];
         var ap = tankAppealParts(o);
-        bodyHtml += '현재: <b>' + sp.name + '</b> (매력 <b>' + Math.floor(ap.total) + '</b>)';
+        var bt = bondTitle(o);
+        bodyHtml += '현재: <b>' + exhibitName(o) + '</b> (매력 <b>' + Math.floor(ap.total) + '</b>)';
+        bodyHtml += '<div class="nickRow">' +
+            (o.nick ? (bt ? bt.icon + ' <b>' + bt.name + '</b> · ' : '') + '함께한 지 ' + tenureText(o) + ' '
+                : '<span class="small">이름을 지어 주면 함께한 시간이 쌓여 칭호를 받아요 </span>') +
+            '<button class="btn mini" id="btnNick">✏️ ' + (o.nick ? '이름 바꾸기' : '이름 짓기') + '</button></div>';
         // itemized appeal breakdown
         var apLines = [];
         apLines.push('기본(' + b.name + ') <b>+' + ap.base + '</b>');
@@ -11278,6 +12617,10 @@ function openObjectModal(o)
         if (ap.specialMult > 1)
         {
             apLines.push('📜 기획전 보너스 <b>×1.5</b>');
+        }
+        if (ap.bondMult > 1)
+        {
+            apLines.push(bt.icon + ' ' + bt.name + ' 칭호 <b>×' + ap.bondMult.toFixed(2) + '</b>');
         }
         bodyHtml += '<div style="margin-top:6px;background:#fff0c8;border:2px solid #e0b050;border-radius:8px;padding:6px 8px;font-size:12px;text-align:left;">📊 매력 계산<br>' + apLines.join('<br>') + '</div>';
         if (isMood)
@@ -11307,7 +12650,12 @@ function openObjectModal(o)
     {
         bodyHtml += '<b class="bad">' + THEME.text.emptyFull + '</b>';
     }
-    bodyHtml += '<br><span class="small">' + THEME.text.selectHint + '</span></div><div id="spList"></div>';
+    bodyHtml += '<br><span class="small">' + THEME.text.selectHint + '</span>';
+    if (o.nick)
+    {
+        bodyHtml += '<br><span class="small bad">다른 ' + THEME.text.speciesWord + '(으)로 바꾸면 「' + o.nick + '」의 이름과 함께한 시간이 사라져요</span>';
+    }
+    bodyHtml += '</div><div id="spList"></div>';
 
     var btns = [];
     if (isMood && o.species)
@@ -11333,6 +12681,16 @@ function openObjectModal(o)
         buttons: btns,
         onRender: function (bodyEl, closeFn)
         {
+            var nb = bodyEl.querySelector('#btnNick');
+            if (nb)
+            {
+                nb.addEventListener('click', function ()
+                {
+                    sfx('click');
+                    closeFn();
+                    showNickModal(o);
+                });
+            }
             var listEl = bodyEl.querySelector('#spList');
             var any = false;
             for (var i = 0; i < SPECIES_ORDER.length; i++)
@@ -11382,6 +12740,72 @@ function openObjectModal(o)
             if (!any)
             {
                 listEl.innerHTML = '<div class="small" style="text-align:center;">' + THEME.text.noSelectable + '</div>';
+            }
+        }
+    });
+}
+
+// name input for an exhibit's resident; reopens the exhibit when done
+function showNickModal(o)
+{
+    var sp = SPECIES[o.species];
+    queueModal({
+        title: '✏️ 이름 짓기',
+        body: '<div style="text-align:center;"><img src="' + iconForSpecies(o.species) + '" style="width:44px;height:44px;"><br>' +
+            '<b>' + sp.name + '</b>에게 이름을 지어 줄래요?<br>' +
+            '<input id="nickInput" class="selectable nickInput" type="text" maxlength="' + NICK_MAX + '" placeholder="예) 뽀삐" autocomplete="off" autocorrect="off" spellcheck="false">' +
+            '<div class="small">한글 · 영문 ' + NICK_MAX + '자까지 · 함께한 지 1년이면 🤝 단짝, 3년 🎖️ 베테랑, 5년 👑 레전드</div></div>',
+        buttons: [
+            {
+                label: '좋아!', cls: 'blue',
+                onClick: function ()
+                {
+                    var el = $('nickInput');
+                    var name = setNick(o, el ? el.value : '');
+                    if (name)
+                    {
+                        showToast('✏️ 이제 「' + name + '」(이)라고 불러요!');
+                    }
+                    openObjectModal(o);
+                }
+            },
+            {
+                label: o.nick ? '이름 지우기' : '취소', cls: 'gray',
+                onClick: function ()
+                {
+                    if (o.nick)
+                    {
+                        setNick(o, '');
+                        showToast('이름을 지웠어요');
+                    }
+                    openObjectModal(o);
+                }
+            }
+        ],
+        onRender: function (bodyEl)
+        {
+            var el = bodyEl.querySelector('#nickInput');
+            if (el)
+            {
+                el.value = o.nick || '';
+                el.addEventListener('keydown', function (e)
+                {
+                    if (e.key === 'Enter')
+                    {
+                        var ok = document.querySelector('#modalHost .btnRow .btn.blue');
+                        if (ok)
+                        {
+                            ok.click();
+                        }
+                    }
+                });
+                try
+                {
+                    el.focus();
+                }
+                catch (e2)
+                {
+                }
             }
         }
     });
@@ -12553,6 +13977,9 @@ function renderWorld()
         ctx.globalAlpha = 1;
     }
 
+    // thought bubbles over visitors in this room
+    drawThoughts();
+
     // floating texts
     ctx.font = 'bold 10px sans-serif';
     ctx.textAlign = 'center';
@@ -12590,6 +14017,44 @@ function renderWorld()
     if (S.groupBurst > 0)
     {
         drawBanner('🎒 단체 손님이 몰려오는 중!', bannerY, 'rgba(40,120,80,0.9)');
+    }
+}
+
+// a white speech-cloud with a pictogram, following its visitor. pictograms
+// only: small Korean text on the canvas turns to mush, so the words live in
+// the diagnosis tab instead
+function drawThoughts()
+{
+    var drawn = 0;
+    for (var i = 0; i < VISITORS.length && drawn < THOUGHT_DRAW_MAX; i++)
+    {
+        var v = VISITORS[i];
+        if (!v.thought || (v.room || 0) !== curRoom())
+        {
+            continue;
+        }
+        drawn++;
+        var t = v.thought.t;
+        var a = (t < 0.15) ? t / 0.15 : (t > 1.8 ? Math.max(0, (2.2 - t) / 0.4) : 1);
+        var bx = v.x + 7;
+        var by = v.y - 40;
+        ctx.globalAlpha = a;
+        ctx.fillStyle = 'rgba(255,255,255,0.94)';
+        ctx.strokeStyle = 'rgba(60,40,20,0.55)';
+        ctx.lineWidth = 1;
+        roundRect(ctx, bx - 10, by - 9, 20, 17, 7);
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(bx - 7, by + 11, 2.2, 0, Math.PI * 2);
+        ctx.arc(bx - 10, by + 15, 1.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#000';
+        ctx.fillText(THOUGHT_ICON[v.thought.kind] || '💭', bx, by + 4);
+        ctx.textAlign = 'left';
+        ctx.globalAlpha = 1;
     }
 }
 
@@ -12871,6 +14336,36 @@ function handleTapConfirm(t)
     commitPlacement(t.tx, t.ty);
 }
 
+// the regular visitor under a tap in world px (y already below the wall), or
+// null. ordinary visitors are never tappable: they would steal taps meant for
+// the buildings behind them.
+function regularVisitorAt(px, py)
+{
+    var best = null;
+    var bestD = 1e9;
+    for (var i = 0; i < VISITORS.length; i++)
+    {
+        var v = VISITORS[i];
+        if (!v.regId || (v.room || 0) !== curRoom())
+        {
+            continue;
+        }
+        // sprite spans x-8..x+8, y-22..y+2 plus the star above; pad for fingers
+        var dx = Math.abs(px - v.x);
+        var dy = py - v.y;
+        if (dx <= 14 && dy >= -32 && dy <= 8)
+        {
+            var d = dx + Math.abs(dy + 10);
+            if (d < bestD)
+            {
+                bestD = d;
+                best = v;
+            }
+        }
+    }
+    return best;
+}
+
 var ptDown = false;
 var ptStart = null;
 var ptDragged = false;
@@ -12918,14 +14413,27 @@ function bindInput()
             return;
         }
         var hit = objectAt(t.tx, t.ty);
-        if (hit)
+        // feeding time wins over everything: it is a timed tap target
+        if (hit && FEED && hit.id === FEED.objId)
         {
-            if (FEED && hit.id === FEED.objId)
+            doFeed(hit);
+            updateHUD();
+            return;
+        }
+        // a regular standing in front of a building is what the player meant
+        var rv = regularVisitorAt(t.px, t.py);
+        if (rv)
+        {
+            var rg = regById(rv.regId);
+            if (rg)
             {
-                doFeed(hit);
-                updateHUD();
+                sfx('click');
+                openRegularModal(rg);
                 return;
             }
+        }
+        if (hit)
+        {
             sfx('click');
             openObjectModal(hit);
         }
